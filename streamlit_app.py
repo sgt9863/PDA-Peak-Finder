@@ -223,7 +223,9 @@ min_height_on = st.sidebar.checkbox("最小高さを使う", value=False)
 min_height = st.sidebar.slider("最小高さ (AU)", 0.0, 1.0, 0.05, 0.01) if min_height_on else None
 
 st.sidebar.subheader("ピーク高さ範囲フィルタ")
-height_on = st.sidebar.checkbox("範囲外の高さのピークを除外", value=True)
+# default OFF: low-absorbance real peaks (e.g. late, high-retention runs at
+# 230 nm) can fall below a height threshold — filtering risks losing them.
+height_on = st.sidebar.checkbox("範囲外の高さのピークを除外", value=False)
 height_unit = st.sidebar.radio(
     "高さの単位", ["AU", "µV"], index=0, horizontal=True,
     help="Empower と同じ AU、または検出器出力 µV(換算係数を指定)。",

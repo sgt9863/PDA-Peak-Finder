@@ -47,7 +47,10 @@ class DeconvolutionConfig:
     #: under dense clusters) or "opening" (fast morphological, flat offsets only).
     baseline_method: str = "als"
     als_lambda: float = 1e6            # ALS smoothness (larger = stiffer baseline)
-    als_p: float = 0.005              # ALS asymmetry (small = baseline hugs valleys)
+    # ALS asymmetry: small keeps the baseline down at the true valleys rather
+    # than riding up into peak bases (which would shrink FWHM). 0.0005 gives
+    # FWHM within ~5% of Empower's width-at-half-height on the validation set.
+    als_p: float = 0.0005
     als_niter: int = 10
     baseline_window_min: float = 1.0   # rolling-opening baseline window (minutes)
     overlap_valley_ratio: float = 0.5  # group peaks whose valley stays above this
