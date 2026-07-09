@@ -107,3 +107,18 @@ def test_als_baseline_recovers_sharp_peaks_on_a_hump():
         assert any(abs(r - target) < 0.05 for r in rts), (target, rts)
     # no absurdly wide component absorbing the hump
     assert all(p.fwhm < 0.2 for p in found)
+
+
+def test_fwhm_height_fraction_widens_width():
+    # measuring width lower on the peak (0.45 vs 0.50 of height) gives a wider
+    # value -- used to match Empower's width-at-half-height convention.
+    t = np.linspace(4.0, 6.5, 3000)
+    ch = _chrom(t, _gauss(t, 1.0, 5.0, 0.05) + 0.001)
+    cfg = dict(min_prominence=0.02, baseline_method="opening")
+    w50 = list(detect_peaks_deconvolved(
+        ch, DeconvolutionConfig(fwhm_height_fraction=0.50, **cfg)))[0].fwhm
+    w45 = list(detect_peaks_deconvolved(
+        ch, DeconvolutionConfig(fwhm_height_fraction=0.45, **cfg)))[0].fwhm
+    assert w45 > w50
+    # true FWHM (0.5) of this Gaussian is ~2.3548*0.05
+    assert abs(w50 - 2.3548 * 0.05) < 0.01

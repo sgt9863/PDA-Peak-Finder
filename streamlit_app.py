@@ -108,6 +108,7 @@ def analyse(data: PDAData, params: dict):
                 model=params["decon_model"],
                 min_prominence=params["min_prominence"],
                 min_distance_min=params["min_distance"],
+                fwhm_height_fraction=params["fwhm_fraction"],
             ),
             return_components=True,
         )
@@ -208,11 +209,18 @@ deconvolve = st.sidebar.checkbox(
     help="共溶出・ショルダーを成分フィットで分離し、被っても各ピークの RT・FWHM を取得。重回帰用。",
 )
 decon_model = "emg"
+fwhm_fraction = 0.5
 if deconvolve:
     decon_model = st.sidebar.selectbox(
         "ピークモデル", ["emg", "gauss"],
         format_func={"emg": "EMG(テーリング対応)", "gauss": "ガウス"}.get,
     )
+    empower_width = st.sidebar.checkbox(
+        "Empower互換の幅 (45%高さ)", value=False,
+        help="Empower の Width@half height は実質45%高さの幅に一致。ONで Empower の"
+             "半値幅にほぼ1:1で揃います(OFF=真のFWHM=50%高さ)。",
+    )
+    fwhm_fraction = 0.45 if empower_width else 0.5
 
 st.sidebar.subheader("ピーク検出")
 min_prominence = st.sidebar.slider(
@@ -290,7 +298,7 @@ if use_wl_range and datasets:
 
 params = dict(
     base_wl=base_wl, base_bw=base_bw,
-    deconvolve=deconvolve, decon_model=decon_model,
+    deconvolve=deconvolve, decon_model=decon_model, fwhm_fraction=fwhm_fraction,
     min_prominence=min_prominence, min_distance=min_distance, min_height=min_height,
     monitor_on=monitor_on, monitor_wl=monitor_wl, monitor_min_abs=monitor_min_abs,
     height_on=height_on, uv_scale=uv_scale, height_unit=height_unit,

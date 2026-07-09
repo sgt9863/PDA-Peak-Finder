@@ -56,6 +56,10 @@ class DeconvolutionConfig:
     overlap_valley_ratio: float = 0.5  # group peaks whose valley stays above this
     max_peaks_per_cluster: int = 5     # split clusters larger than this (speed)
     merge_rt_ratio: float = 0.25       # merge components closer than this·FWHM (RT)
+    #: Height fraction at which the reported width is measured (0.5 = true
+    #: FWHM). Empower's "width at half height" matches ~0.45 on our data, so
+    #: set 0.45 for Empower-compatible widths.
+    fwhm_height_fraction: float = 0.5
     fit_maxfev: int = 8000
 
 
@@ -92,14 +96,20 @@ def _model_sum(model: str):
 
 # -- metrics off a single fitted component ---------------------------------
 
-def _curve_metrics(t_fine, y):
-    """Return (rt, fwhm, height, start, end) read off a component curve."""
+def _curve_metrics(t_fine, y, height_fraction=0.5):
+    """Return (rt, width, height, start, end) read off a component curve.
+
+    ``width`` is the peak width at ``height_fraction`` of the apex height
+    (0.5 = true FWHM). Empower's "width at half height" empirically matches
+    the width at ~0.45 on the validation set, so set ``height_fraction=0.45``
+    for Empower-compatible widths.
+    """
     imax = int(np.argmax(y))
     height = float(y[imax])
     rt = float(t_fine[imax])
     if height <= 0:
         return rt, None, height, None, None
-    half = height / 2.0
+    half = height * height_fraction
 
     def _cross(idx_range):
         for j in idx_range:
@@ -332,7 +342,8 @@ def detect_peaks_deconvolved(
             if fitted is not None:
                 params = fitted[i * p:(i + 1) * p]
                 y_comp = comp_fn(t_fine, *params)
-                rt, fwhm, height, start, end = _curve_metrics(t_fine, y_comp)
+                rt, fwhm, height, start, end = _curve_metrics(
+                    t_fine, y_comp, config.fwhm_height_fraction)
                 area = float(params[0])
                 apex_index = int(np.argmin(np.abs(times - rt)))
                 comp = (t_fine, y_comp)  # baseline-subtracted component bump
