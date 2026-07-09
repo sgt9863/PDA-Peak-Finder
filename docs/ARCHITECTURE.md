@@ -103,7 +103,9 @@ PDA-Peak-Finder/
 - `SpectralDataReader`(抽象基底):`format_name`, `file_patterns`, `sniff()`, `read()`。
 - レジストリ(`register_reader` / `get_reader` / `load` / `load_many`)がフォーマット判定と
   読み込みの入口。フォーマット追加は 1 クラス追加+登録のみ。
-- `arw.py` は Empower ARW 用スタブ(後述のインターフェース設計)。
+- `arw.py` は Waters Empower ARW リーダー(実装済み)。Shift-JIS(cp932)・CR 改行・
+  タブ区切りで、`波長`行(波長軸)+ `時間`ブロック(各行 = 時間 + 各波長の吸光度)を
+  構造ベースに解析(日本語ラベル非依存)。truncated 末尾行はスキップ、降順波長はソート。
 
 ### peak_detection — ピーク検出と特性計算
 - `Chromatogram`(通常は MaxPlot)から全ピークを検出し、`PeakTable` を返す。
@@ -133,10 +135,10 @@ PDA-Peak-Finder/
 - `pipeline` がワークフロー 1→8 を束ね、`AnalysisConfig` を保持。
 - `cli` は `analyze`(ファイル解析)と `demo`(合成データ)の 2 サブコマンド。
 
-## リーダーインターフェース設計(将来の ARW 実装)
+## リーダーインターフェース設計
 
-ARW の解析処理は**まだ実装しません**。将来サンプルが提供された時点で
-`reader/arw.py` の `read()` を実装するだけで全体が動くよう、以下の契約を定義済みです。
+ARW リーダーは**実装済み**です(`reader/arw.py`)。同じ契約に沿って、新しいフォーマットも
+`read()` を実装するだけで全体が動きます。契約は以下のとおりです。
 
 ```python
 class SpectralDataReader(ABC):
@@ -160,11 +162,12 @@ class SpectralDataReader(ABC):
 新フォーマット追加手順:`SpectralDataReader` を継承 → `read`/`sniff` を実装 →
 `reader/__init__.py` で `register_reader()`。呼び出し側(`pipeline`/`cli`)は無変更。
 
-ARW 実装時のチェックリストは `reader/arw.py` の docstring に記載しています。
+ARW の具体的なフォーマット仕様と実装上の判断は `reader/arw.py` の docstring を参照。
 
 ## テスト戦略
 
 `testing.synthetic_pdadata()` が既知の RT・FWHM・λmax を持つ合成 `PDAData` を生成するため、
 **ARW ファイルなしで**検出・スペクトル・トラッキング・出力・可視化の全段を
-グラウンドトゥルースに対して検証できます。ARW サンプル入手後は
-`tests/fixtures/` に実データフィクスチャとゴールデン値テストを追加します。
+グラウンドトゥルースに対して検証できます。ARW リーダーは、テスト内で同フォーマットの
+小さな ARW を生成するラウンドトリップテスト(`tests/test_arw.py`)で検証し、
+`data/` に実サンプルがある場合はそれも読み込んで検証します(存在しなければスキップ)。

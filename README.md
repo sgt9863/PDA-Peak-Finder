@@ -5,9 +5,9 @@ Waters Empower から取得した **PDA/UV の 3D スペクトルデータ**(時
 Retention Time (RT)・FWHM・λmax を算出、複数分析間でピークをトラッキングし、
 CSV 出力と可視化を行います。
 
-> **現在のステータス:** ARW フォーマット非依存のアーキテクチャと全解析パイプラインを実装済み。
-> ファイル読み込み(`reader`)は差し替え可能な設計で、**ARW パーサ本体はサンプル提供後に実装**します。
-> それまでは組み込みの合成データ(`pda-peaks demo`)で全機能を試せます。
+> **現在のステータス:** アーキテクチャ・全解析パイプライン・**Waters Empower ARW リーダー**を実装済み。
+> `pda-peaks analyze data/*.arw` で実データを解析できます。ファイルがなくても組み込みの
+> 合成データ(`pda-peaks demo`)で全機能を試せます。
 
 ## 特長
 
@@ -36,11 +36,15 @@ Python 3.10 以上が必要です。
 pda-peaks demo -o results/
 ```
 
-実データを解析する場合(ARW リーダー実装後):
+実データ(Waters Empower ARW エクスポート)を解析する場合:
 
 ```bash
 pda-peaks analyze data/*.arw -o results/
 ```
+
+ARW は Shift-JIS・CR 改行・タブ区切りの 3D エクスポート(時間 × 波長)に対応しています。
+低波長カットオフ(溶媒吸収)で λmax が下限に張り付く場合は
+`--wavelength-range 210 400` などで解析範囲を絞れます。
 
 主なオプション:`--min-prominence`(検出感度)、`--min-distance`(最小ピーク間隔・分)、
 `--rt-tolerance`(トラッキング許容差・分)、`--wavelength-range LO HI`(MaxPlot の波長範囲)、

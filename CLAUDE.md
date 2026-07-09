@@ -17,11 +17,12 @@ python -m pytest                            # run all tests
 python -m pytest tests/test_spectra.py -q   # single module
 python -m pytest tests/test_spectra.py::test_name   # single test
 pda-peaks demo -o results/                  # run full pipeline on built-in synthetic data
-pda-peaks analyze data/*.arw -o results/    # analyze real files (after ARW reader lands)
+pda-peaks analyze data/*.arw -o results/    # analyze real Waters Empower ARW exports
 ```
 
-There is no ARW sample data yet — use `pda-peaks demo` or `pda_peak_finder.testing.synthetic_pdadata()`
-to exercise the whole pipeline without files.
+`pda-peaks demo` and `pda_peak_finder.testing.synthetic_pdadata()` exercise the whole pipeline
+without any files. The ARW reader is implemented; `data/*.arw` sample files (if present) are
+gitignored and picked up by `tests/test_arw.py` only when they exist.
 
 ## Architecture
 
@@ -35,7 +36,9 @@ contract binding all modules together. Change the model deliberately — it ripp
 
 **Module responsibilities** (each owns its own directory; they communicate only through `models.py` types):
 - `reader/` — file → validated `PDAData`. `base.py` has the `SpectralDataReader` ABC + registry
-  (`register_reader`/`load`); `arw.py` is a **stub** (parsing deferred until sample ARW files exist).
+  (`register_reader`/`load`); `arw.py` parses Waters Empower ARW exports (Shift-JIS/cp932, CR line
+  endings, TAB-separated; `波長` wavelength axis + `時間` time-major data block; structural, not
+  label-dependent; drops a truncated final row).
 - `peak_detection/` — detect peaks in a `Chromatogram`, compute RT/FWHM/area (scipy.signal).
 - `spectra/` — extract UV spectrum at each apex, compute λmax, annotate the `PeakTable`.
 - `tracking/` — match peaks across injections (greedy, RT-based, optional λmax).
