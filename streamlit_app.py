@@ -261,9 +261,14 @@ track_spectral = st.sidebar.checkbox(
 )
 if track_spectral:
     min_sim = st.sidebar.slider("最小スペクトル類似度", 0.80, 1.0, 0.98, 0.01)
+    rt_max_shift = st.sidebar.slider(
+        "RT 最大シフト (min)", 0.5, 10.0, 2.0, 0.5,
+        help="スペクトル一致でも、RT がこれ以上ずれる対応は却下(非特異ピークの誤マッチ抑制)。",
+    )
     rt_tol = 0.2
 else:
     min_sim = 0.98
+    rt_max_shift = None
     rt_tol = st.sidebar.slider("トラッキング RT 許容差 (min)", 0.01, 1.0, 0.2, 0.01)
 
 wl_lo = float(min(d.wavelengths[0] for d in datasets)) if datasets else 190.0
@@ -347,7 +352,7 @@ if len(tables) > 1:
     st.header("② 条件間ピークトラッキング")
     result = track_peaks(tables, TrackingConfig(
         rt_tolerance=rt_tol, use_spectral=track_spectral,
-        min_spectral_similarity=min_sim))
+        min_spectral_similarity=min_sim, rt_max_shift=rt_max_shift))
     matched = sum(1 for g in result.groups if len(g.members) == len(tables))
     st.caption(f"{len(result.groups)} グループ / 全条件で一致 {matched} "
                + ("(スペクトル類似度で同定)" if track_spectral else "(RT で同定)"))

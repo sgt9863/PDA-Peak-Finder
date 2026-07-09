@@ -84,6 +84,8 @@ def _match_cost(peak: Peak, group: PeakGroup, config: TrackingConfig) -> float |
     # compound is tracked across conditions despite large RT shifts; RT only
     # breaks ties among spectrally-compatible candidates.
     if config.use_spectral:
+        if config.rt_max_shift is not None and rt_diff > config.rt_max_shift:
+            return None
         sim = _spectral_similarity(peak, group)
         if sim is None or sim < config.min_spectral_similarity:
             return None

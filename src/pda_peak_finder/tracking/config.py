@@ -33,3 +33,8 @@ class TrackingConfig:
     min_spectral_similarity: float = 0.95
     #: Soft cost per minute of RT difference when spectral matching (tie-break).
     rt_soft_weight: float = 0.5
+    #: Even with matching spectra, reject a match whose RT differs from the
+    #: group by more than this (minutes). Guards against non-specific spectra
+    #: (e.g. ~200 nm solvent cutoff) being matched across implausible RT jumps.
+    #: None = no limit.
+    rt_max_shift: float | None = None
