@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pda-peak-finder"
-version = "0.1.0"
+version = "0.2.0"
 description = "Peak detection and UV spectral analysis for Waters Empower PDA/UV 3D data"
 readme = "README.md"
 requires-python = ">=3.10"

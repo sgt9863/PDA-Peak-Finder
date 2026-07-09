@@ -15,9 +15,19 @@ Run:
 from __future__ import annotations
 
 import io
+import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+
+# Import the package from the repo's own ``src/`` first. On Streamlit
+# Community Cloud the package is pip-installed via ``.`` in requirements.txt,
+# but pip skips reinstalling when the version is unchanged, so a stale copy in
+# site-packages can miss newly added symbols. Putting src/ ahead on sys.path
+# makes the app always run the live source, independent of the installed copy.
+_SRC = Path(__file__).resolve().parent / "src"
+if _SRC.is_dir():
+    sys.path.insert(0, str(_SRC))
 
 import numpy as np
 import pandas as pd
