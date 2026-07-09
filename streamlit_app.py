@@ -259,12 +259,18 @@ track_spectral = st.sidebar.checkbox(
     "スペクトルで条件間トラッキング", value=True,
     help="UV スペクトル類似度で同定。条件を振って RT が大きくずれても同じ化合物を追跡。",
 )
+track_sequential = False
 if track_spectral:
     min_sim = st.sidebar.slider("最小スペクトル類似度", 0.80, 1.0, 0.98, 0.01)
-    rt_max_shift = st.sidebar.slider(
-        "RT 最大シフト (min)", 0.5, 10.0, 2.0, 0.5,
-        help="スペクトル一致でも、RT がこれ以上ずれる対応は却下(非特異ピークの誤マッチ抑制)。",
+    track_sequential = st.sidebar.checkbox(
+        "逐次連続性マッチング", value=True,
+        help="各条件を直前条件に対して照合し、徐々にドリフトする RT を段階的に追跡。"
+             "条件系列(グラジエント等)で安定。",
     )
+    shift_label = ("隣接条件間の RT 最大シフト (min)" if track_sequential
+                   else "RT 最大シフト (min)")
+    rt_max_shift = st.sidebar.slider(shift_label, 0.3, 10.0,
+                                     1.0 if track_sequential else 2.0, 0.1)
     rt_tol = 0.2
 else:
     min_sim = 0.98
@@ -352,7 +358,8 @@ if len(tables) > 1:
     st.header("② 条件間ピークトラッキング")
     result = track_peaks(tables, TrackingConfig(
         rt_tolerance=rt_tol, use_spectral=track_spectral,
-        min_spectral_similarity=min_sim, rt_max_shift=rt_max_shift))
+        min_spectral_similarity=min_sim, rt_max_shift=rt_max_shift,
+        sequential=track_sequential))
     matched = sum(1 for g in result.groups if len(g.members) == len(tables))
     st.caption(f"{len(result.groups)} グループ / 全条件で一致 {matched} "
                + ("(スペクトル類似度で同定)" if track_spectral else "(RT で同定)"))

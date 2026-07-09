@@ -36,5 +36,11 @@ class TrackingConfig:
     #: Even with matching spectra, reject a match whose RT differs from the
     #: group by more than this (minutes). Guards against non-specific spectra
     #: (e.g. ~200 nm solvent cutoff) being matched across implausible RT jumps.
+    #: In sequential mode this is the max shift between ADJACENT conditions.
     #: None = no limit.
     rt_max_shift: float | None = None
+    #: Sequential continuity tracking: match each condition against the track's
+    #: most recent peak (previous condition) instead of the group mean, so a
+    #: retention time that drifts gradually across many conditions is followed
+    #: step-by-step. Recommended for condition series with monotonic drift.
+    sequential: bool = False

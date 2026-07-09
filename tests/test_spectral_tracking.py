@@ -58,3 +58,32 @@ def test_regression_table_is_tidy_per_compound_condition():
     assert df["group_id"].nunique() == 1
     assert set(df["injection_id"]) == {"A", "B"}
     assert sorted(df["fwhm"].tolist()) == [0.10, 0.12]
+
+
+def test_sequential_tracks_gradual_drift_series():
+    # same compound (same spectrum), RT drifts +0.3 min each condition;
+    # total drift 1.5 min over 6 conditions exceeds a small per-step gate only
+    # cumulatively -- sequential continuity should keep it one track.
+    from pda_peak_finder.tracking import track_peaks, TrackingConfig
+    tables = [
+        PeakTable(injection_id=f"C{i}", peaks=[_peak(3.0 + 0.3 * i, 254, f"C{i}")])
+        for i in range(6)
+    ]
+    seq = track_peaks(tables, TrackingConfig(
+        use_spectral=True, sequential=True, rt_max_shift=0.5))
+    assert len(seq.groups) == 1
+    assert len(seq.groups[0].members) == 6
+
+
+def test_sequential_bridges_a_one_condition_gap():
+    from pda_peak_finder.tracking import track_peaks, TrackingConfig
+    tables = [
+        PeakTable(injection_id="C0", peaks=[_peak(3.0, 254, "C0")]),
+        PeakTable(injection_id="C1", peaks=[]),                       # missing
+        PeakTable(injection_id="C2", peaks=[_peak(3.4, 254, "C2")]),  # reappears
+    ]
+    seq = track_peaks(tables, TrackingConfig(
+        use_spectral=True, sequential=True, rt_max_shift=0.3))
+    # gap scaling (0.3 * 2 = 0.6) bridges the 0.4 min shift across the gap
+    assert len(seq.groups) == 1
+    assert len(seq.groups[0].members) == 2

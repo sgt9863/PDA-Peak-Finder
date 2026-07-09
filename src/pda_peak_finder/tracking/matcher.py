@@ -38,6 +38,9 @@ def track_peaks(
     if config is None:
         config = TrackingConfig()
 
+    if config.sequential:
+        return _track_sequential(tables, config)
+
     groups: list[PeakGroup] = []
     next_group_id = 0
 
@@ -74,6 +77,91 @@ def track_peaks(
 
     injection_ids = [table.injection_id for table in tables]
     return TrackingResult(groups=groups, injection_ids=injection_ids)
+
+
+def _track_sequential(tables, config: TrackingConfig) -> TrackingResult:
+    """Continuity tracking: match each condition to each track's last peak.
+
+    Tracks carry their most-recent peak (RT + spectrum); a new condition's
+    peaks are matched against that recent state, so a gradually drifting
+    retention time is followed step-by-step across the whole series. Tracks
+    unmatched in a condition stay active (a one-condition gap is tolerated).
+    """
+    tracks: list[PeakGroup] = []
+    last_peak: list[Peak] = []   # most-recent peak per track, index-aligned
+    last_idx: list[int] = []     # condition index of that most-recent peak
+    next_group_id = 0
+
+    for ci, table in enumerate(tables):
+        inj = table.injection_id
+        peaks = list(table.peaks)
+
+        candidates: list[tuple[float, int, int]] = []
+        for pi, peak in enumerate(peaks):
+            for ti, prev in enumerate(last_peak):
+                if inj in tracks[ti].members:
+                    continue
+                # tolerate detection gaps: allow a proportionally larger RT
+                # shift when the track was last seen several conditions ago,
+                # but cap the multiplier so a long gap can't bridge anything.
+                gap = ci - last_idx[ti]
+                gate = (None if config.rt_max_shift is None
+                        else config.rt_max_shift * min(gap, 3))
+                cost = _step_cost(peak, prev, config, gate)
+                if cost is not None:
+                    candidates.append((cost, pi, ti))
+        candidates.sort()
+
+        matched_track: dict[int, int] = {}
+        used_tracks: set[int] = set()
+        for cost, pi, ti in candidates:
+            if pi in matched_track or ti in used_tracks:
+                continue
+            matched_track[pi] = ti
+            used_tracks.add(ti)
+
+        for pi, peak in enumerate(peaks):
+            ti = matched_track.get(pi)
+            if ti is not None:
+                tracks[ti].members[inj] = peak
+                last_peak[ti] = peak
+                last_idx[ti] = ci
+            else:
+                tracks.append(PeakGroup(group_id=next_group_id, members={inj: peak}))
+                last_peak.append(peak)
+                last_idx.append(ci)
+                next_group_id += 1
+
+    return TrackingResult(groups=tracks,
+                          injection_ids=[t.injection_id for t in tables])
+
+
+def _step_cost(peak: Peak, prev: Peak, config: TrackingConfig,
+               rt_gate: float | None) -> float | None:
+    """Cost of continuing a track from its last peak ``prev`` to ``peak``."""
+    rt_diff = abs(peak.apex_time - prev.apex_time)
+    if rt_gate is not None and rt_diff > rt_gate:
+        return None
+    if config.use_spectral:
+        if peak.spectrum is None or prev.spectrum is None:
+            return None
+        a, b = peak.spectrum.values, prev.spectrum.values
+        if a.shape != b.shape:
+            b = np.interp(peak.spectrum.wavelengths,
+                          prev.spectrum.wavelengths, prev.spectrum.values)
+        sim = _cosine(np.asarray(a, float), np.asarray(b, float))
+        if sim is None or sim < config.min_spectral_similarity:
+            return None
+        return (1.0 - sim) + config.rt_soft_weight * rt_diff
+    if rt_diff > config.rt_tolerance:
+        return None
+    cost = rt_diff
+    if config.use_lambda_max and peak.lambda_max is not None and prev.lambda_max is not None:
+        ldiff = abs(peak.lambda_max - prev.lambda_max)
+        if ldiff > config.lambda_tolerance:
+            return None
+        cost += config.lambda_weight * ldiff
+    return cost
 
 
 def _match_cost(peak: Peak, group: PeakGroup, config: TrackingConfig) -> float | None:
