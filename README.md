@@ -68,6 +68,17 @@ streamlit run streamlit_app.py
 モニタ波長・除外閾値・ラベル種別・Y 軸ノーマライズをスライダーで調整しながら、ラベル付き
 クロマトグラム/ピークテーブル/UV スペクトル/コンター/トラッキングを表示し CSV を出力できます。
 
+### デプロイ(Streamlit Community Cloud)
+
+1. https://share.streamlit.io で GitHub 連携 → 「New app」
+2. リポジトリ・ブランチと **メインファイル `streamlit_app.py`** を指定して Deploy
+3. リポジトリ直下の `requirements.txt`(依存+パッケージ本体を install)と `packages.txt`
+   (`fonts-ipafont-gothic` = 日本語フォント)が自動で使われます
+
+`data/` は配信されない(gitignore)ため、クラウドでは「アップロード」または「合成デモ」を使います。
+社内データを外部に出せない場合は、ローカル/社内サーバで `streamlit run streamlit_app.py`(または
+Docker)での運用を推奨します。
+
 Python API:
 
 ```python

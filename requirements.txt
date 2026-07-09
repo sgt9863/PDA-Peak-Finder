@@ -1,0 +1,8 @@
+# Runtime dependencies for Streamlit Community Cloud (reads this file at the
+# repo root). Installs the package itself (src/pda_peak_finder) via ".".
+numpy
+pandas
+scipy
+matplotlib
+streamlit
+.
