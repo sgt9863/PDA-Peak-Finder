@@ -210,10 +210,10 @@ trace_kind = st.sidebar.radio(
 if trace_kind.startswith("230"):
     base_wl = st.sidebar.number_input("検出波長 (nm)", 190.0, 800.0, 230.0, 1.0)
     base_bw = st.sidebar.number_input("バンド幅 (nm, 0=最近点)", 0.0, 20.0, 0.0, 1.0)
-    prom_default, prom_max, prom_step = 0.0006, 0.02, 0.0001
+    prom_default, prom_max, prom_step = 0.0003, 0.008, 0.00005
 else:
     base_wl, base_bw = None, 0.0
-    prom_default, prom_max, prom_step = 0.02, 0.5, 0.005
+    prom_default, prom_max, prom_step = 0.008, 0.15, 0.001
 
 st.sidebar.subheader("検出方法")
 deconvolve = st.sidebar.checkbox(
@@ -236,11 +236,16 @@ if deconvolve:
 
 st.sidebar.subheader("ピーク検出")
 min_prominence = st.sidebar.slider(
-    "最小プロミネンス (AU)", 0.0, prom_max, prom_default, prom_step, format="%.4f"
+    "最小プロミネンス (AU)", 0.0, prom_max, prom_default, prom_step, format="%.5f",
+    help="小さいほど高感度(微小ピークも拾う)。低吸収ピーク狙いは低値側で微調整。",
 )
-min_distance = st.sidebar.slider("最小ピーク間隔 (min)", 0.0, 1.0, 0.05, 0.01)
+min_distance = st.sidebar.slider("最小ピーク間隔 (min)", 0.0, 0.3, 0.03, 0.005,
+                                 format="%.3f")
 min_height_on = st.sidebar.checkbox("最小高さを使う", value=False)
-min_height = st.sidebar.slider("最小高さ (AU)", 0.0, 1.0, 0.05, 0.01) if min_height_on else None
+min_height = (
+    st.sidebar.slider("最小高さ (AU)", 0.0, 0.05, 0.001, 0.0005, format="%.4f")
+    if min_height_on else None
+)
 
 st.sidebar.subheader("保持時間フィルタ(任意)")
 # Drop the solvent front / injection dip at the start, or trailing junk at
