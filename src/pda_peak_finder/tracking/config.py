@@ -24,3 +24,12 @@ class TrackingConfig:
     #: Soft cost weight added per nm of lambda_max difference when ranking
     #: candidates (0 = ignore for ranking, only used as a hard gate above).
     lambda_weight: float = 0.0
+    #: Match by full UV-spectrum similarity (cosine) so the same compound is
+    #: tracked across conditions even when its retention time shifts a lot.
+    #: When on, the spectral-similarity gate replaces the hard RT gate and RT
+    #: only breaks ties (``rt_soft_weight``).
+    use_spectral: bool = False
+    #: Minimum spectral cosine similarity to accept a match (0..1).
+    min_spectral_similarity: float = 0.95
+    #: Soft cost per minute of RT difference when spectral matching (tie-break).
+    rt_soft_weight: float = 0.5

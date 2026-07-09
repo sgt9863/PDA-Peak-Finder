@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from .csv import (
+    regression_table,
     write_peak_spectra,
     write_peak_table,
     write_peak_tables,
+    write_regression_table,
     write_tracking_matrix,
 )
 
@@ -14,4 +16,6 @@ __all__ = [
     "write_peak_tables",
     "write_tracking_matrix",
     "write_peak_spectra",
+    "regression_table",
+    "write_regression_table",
 ]

@@ -50,6 +50,49 @@ def write_tracking_matrix(
     return out
 
 
+REGRESSION_COLUMNS = (
+    "group_id", "mean_rt", "n_injections", "injection_id",
+    "apex_time", "fwhm", "area", "height", "lambda_max",
+)
+
+
+def regression_table(result: TrackingResult) -> pd.DataFrame:
+    """Tidy (long-form) table for multiple-regression fitting.
+
+    One row per (tracked compound, injection) with that peak's retention time,
+    FWHM, area, height and lambda_max — the per-condition observations of each
+    peak, aligned across conditions by :func:`track_peaks`. ``group_id``
+    identifies the compound; ``mean_rt`` and ``n_injections`` describe the
+    group. Missing matches simply produce no row for that (group, injection).
+    """
+    rows = []
+    for g in sorted(result.groups, key=lambda g: g.mean_rt):
+        n = len(g.members)
+        for inj in result.injection_ids:
+            peak = g.members.get(inj)
+            if peak is None:
+                continue
+            rows.append({
+                "group_id": g.group_id,
+                "mean_rt": round(g.mean_rt, 5),
+                "n_injections": n,
+                "injection_id": inj,
+                "apex_time": peak.apex_time,
+                "fwhm": peak.fwhm,
+                "area": peak.area,
+                "height": peak.height,
+                "lambda_max": peak.lambda_max,
+            })
+    return pd.DataFrame(rows, columns=list(REGRESSION_COLUMNS))
+
+
+def write_regression_table(result: TrackingResult, path: str | Path) -> Path:
+    """Write the tidy per-(compound, condition) regression table to ``path``."""
+    out = _resolve_path(path)
+    regression_table(result).to_csv(out, index=False)
+    return out
+
+
 def write_peak_spectra(table: PeakTable, path: str | Path) -> Path:
     """Write long-form UV spectra for every peak in ``table`` that has one.
 

@@ -79,6 +79,16 @@ def track_peaks(
 def _match_cost(peak: Peak, group: PeakGroup, config: TrackingConfig) -> float | None:
     """Cost of matching ``peak`` into ``group``, or None if incompatible."""
     rt_diff = abs(peak.apex_time - group.mean_rt)
+
+    # Spectral-similarity matching: gate on UV-spectrum cosine similarity so a
+    # compound is tracked across conditions despite large RT shifts; RT only
+    # breaks ties among spectrally-compatible candidates.
+    if config.use_spectral:
+        sim = _spectral_similarity(peak, group)
+        if sim is None or sim < config.min_spectral_similarity:
+            return None
+        return (1.0 - sim) + config.rt_soft_weight * rt_diff
+
     if rt_diff > config.rt_tolerance:
         return None
 
@@ -100,3 +110,31 @@ def _mean_lambda_max(group: PeakGroup) -> float | None:
     if not values:
         return None
     return float(np.mean(values))
+
+
+def _cosine(a: np.ndarray, b: np.ndarray) -> float | None:
+    """Cosine similarity of two baseline-subtracted spectra."""
+    a = a - a.min()
+    b = b - b.min()
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return None
+    return float(np.dot(a, b) / (na * nb))
+
+
+def _spectral_similarity(peak: Peak, group: PeakGroup) -> float | None:
+    """Best cosine similarity between ``peak``'s spectrum and the group's."""
+    if peak.spectrum is None:
+        return None
+    sims = []
+    for member in group.members.values():
+        if member.spectrum is None:
+            continue
+        a, b = peak.spectrum.values, member.spectrum.values
+        if a.shape != b.shape:
+            b = np.interp(peak.spectrum.wavelengths,
+                          member.spectrum.wavelengths, member.spectrum.values)
+        s = _cosine(np.asarray(a, float), np.asarray(b, float))
+        if s is not None:
+            sims.append(s)
+    return max(sims) if sims else None

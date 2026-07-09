@@ -169,8 +169,13 @@ def _write_outputs(
             tracking, output_dir / "tracking_rt.csv", value="apex_time"
         )
         export.write_tracking_matrix(
+            tracking, output_dir / "tracking_fwhm.csv", value="fwhm"
+        )
+        export.write_tracking_matrix(
             tracking, output_dir / "tracking_lambda_max.csv", value="lambda_max"
         )
+        # tidy per-(compound, condition) table for multiple-regression fitting
+        export.write_regression_table(tracking, output_dir / "regression_long.csv")
 
     if not do_plots:
         return

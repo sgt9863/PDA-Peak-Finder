@@ -49,6 +49,7 @@ from pda_peak_finder.spectra import (
     filter_peaks_by_absorbance,
 )
 from pda_peak_finder.tracking import TrackingConfig, track_peaks
+from pda_peak_finder.export import regression_table
 from pda_peak_finder.testing import synthetic_pdadata
 
 configure_japanese_font()
@@ -254,7 +255,16 @@ label_attr = st.sidebar.selectbox(
     format_func={"lambda_max": "λmax", "peak_id": "ピークID", "apex_time": "保持時間 (RT)"}.get,
 )
 normalize = st.sidebar.checkbox("Y軸ノーマライズ", value=False)
-rt_tol = st.sidebar.slider("トラッキング RT 許容差 (min)", 0.01, 1.0, 0.2, 0.01)
+track_spectral = st.sidebar.checkbox(
+    "スペクトルで条件間トラッキング", value=True,
+    help="UV スペクトル類似度で同定。条件を振って RT が大きくずれても同じ化合物を追跡。",
+)
+if track_spectral:
+    min_sim = st.sidebar.slider("最小スペクトル類似度", 0.80, 1.0, 0.98, 0.01)
+    rt_tol = 0.2
+else:
+    min_sim = 0.98
+    rt_tol = st.sidebar.slider("トラッキング RT 許容差 (min)", 0.01, 1.0, 0.2, 0.01)
 
 wl_lo = float(min(d.wavelengths[0] for d in datasets)) if datasets else 190.0
 wl_hi = float(max(d.wavelengths[-1] for d in datasets)) if datasets else 800.0
@@ -334,18 +344,30 @@ for data, mp, table, n_before, components in results:
             st.pyplot(plot_contour(_decimate(data)), use_container_width=True)
 
 if len(tables) > 1:
-    st.header("② ピークトラッキング (分析間)")
-    result = track_peaks(tables, TrackingConfig(rt_tolerance=rt_tol))
+    st.header("② 条件間ピークトラッキング")
+    result = track_peaks(tables, TrackingConfig(
+        rt_tolerance=rt_tol, use_spectral=track_spectral,
+        min_spectral_similarity=min_sim))
+    matched = sum(1 for g in result.groups if len(g.members) == len(tables))
+    st.caption(f"{len(result.groups)} グループ / 全条件で一致 {matched} "
+               + ("(スペクトル類似度で同定)" if track_spectral else "(RT で同定)"))
     st.pyplot(plot_tracking(result), use_container_width=True)
-    st.caption("同一化合物と推定されるピークを RT で対応付け")
-    matrix = result.to_dataframe(value="apex_time")
-    st.dataframe(matrix, use_container_width=True, hide_index=True)
-    st.download_button(
-        "トラッキング RT 行列 CSV", matrix.to_csv(index=False).encode("utf-8"),
-        file_name="tracking_rt.csv", mime="text/csv",
+
+    st.subheader("重回帰用テーブル(ピーク × 条件)")
+    reg = regression_table(result)
+    st.dataframe(reg, use_container_width=True, hide_index=True)
+    col_r, col_f = st.columns(2)
+    col_r.download_button(
+        "重回帰テーブル (long) CSV", reg.to_csv(index=False).encode("utf-8"),
+        file_name="regression_long.csv", mime="text/csv",
+    )
+    col_f.download_button(
+        "FWHM 行列 CSV",
+        result.to_dataframe(value="fwhm").to_csv(index=False).encode("utf-8"),
+        file_name="tracking_fwhm.csv", mime="text/csv",
     )
 
 st.caption(
-    "MaxPlot(全波長の最大吸光度包絡線)でピーク検出 → apex スペクトルから λmax 算出 "
-    f"→ {monitor_wl:.0f} nm 吸光度が閾値未満のピークを除外。単位: 時間=分, 波長=nm, 吸光度=AU。"
+    "検出トレース(230nm 等 / MaxPlot)でピーク検出(任意で重なり分離)→ apex スペクトルで λmax "
+    "→ 任意フィルタ → 条件間トラッキング。単位: 時間=分, 波長=nm, 吸光度=AU。"
 )
