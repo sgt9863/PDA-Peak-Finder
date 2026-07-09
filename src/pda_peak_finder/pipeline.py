@@ -25,6 +25,7 @@ from .peak_detection import (
     detect_peaks,
     detect_peaks_deconvolved,
     filter_peaks_by_height,
+    filter_peaks_by_retention_time,
 )
 from .plotting import (
     plot_chromatogram,
@@ -66,9 +67,13 @@ class AnalysisConfig:
     #: own spectral maximum (0 disables the relative test).
     monitor_min_fraction: float = 0.0
     #: Keep only peaks whose height is within [height_min, height_max] (AU).
-    #: None disables that bound. (Convert detector-unit ranges, e.g. µV, to AU.)
+    #: None disables that bound.
     height_min: float | None = None
     height_max: float | None = None
+    #: Keep only peaks whose retention time is within [rt_min, rt_max] (min).
+    #: None disables that bound (e.g. rt_min to drop the solvent front).
+    rt_min: float | None = None
+    rt_max: float | None = None
 
 
 @dataclass
@@ -105,6 +110,10 @@ def analyze_injection(
             config.monitor_wavelength,
             min_absorbance=config.monitor_min_absorbance,
             min_fraction=config.monitor_min_fraction,
+        )
+    if config.rt_min is not None or config.rt_max is not None:
+        table = filter_peaks_by_retention_time(
+            table, rt_min=config.rt_min, rt_max=config.rt_max
         )
     if config.height_min is not None or config.height_max is not None:
         table = filter_peaks_by_height(

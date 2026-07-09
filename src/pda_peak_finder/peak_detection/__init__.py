@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from .deconvolution import DeconvolutionConfig, detect_peaks_deconvolved
 from .detect import PeakDetectionConfig, detect_peaks
-from .filters import filter_peaks_by_height
+from .filters import filter_peaks_by_height, filter_peaks_by_retention_time
 
 __all__ = [
     "PeakDetectionConfig",
     "detect_peaks",
     "filter_peaks_by_height",
+    "filter_peaks_by_retention_time",
     "DeconvolutionConfig",
     "detect_peaks_deconvolved",
 ]

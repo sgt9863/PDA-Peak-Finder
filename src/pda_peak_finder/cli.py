@@ -37,6 +37,8 @@ def _build_config(args: argparse.Namespace) -> AnalysisConfig:
         monitor_min_fraction=args.monitor_min_fraction,
         # detection already enforces --min-height; the filter adds the upper bound
         height_max=args.max_height,
+        rt_min=args.rt_min,
+        rt_max=args.rt_max,
     )
 
 
@@ -115,6 +117,10 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
                    help="min absolute absorbance (AU) required at --monitor-wavelength")
     p.add_argument("--monitor-min-fraction", type=float, default=0.0,
                    help="min absorbance at --monitor-wavelength as fraction of peak max")
+    p.add_argument("--rt-min", type=float, default=None,
+                   help="drop peaks eluting before this retention time (minutes)")
+    p.add_argument("--rt-max", type=float, default=None,
+                   help="drop peaks eluting after this retention time (minutes)")
     p.add_argument("--rt-tolerance", type=float, default=0.2,
                    help="RT tolerance for peak tracking (minutes)")
     p.add_argument("--wavelength-range", type=float, nargs=2, default=None,

@@ -31,6 +31,7 @@ from pda_peak_finder.peak_detection import (
     detect_peaks,
     detect_peaks_deconvolved,
     filter_peaks_by_height,
+    filter_peaks_by_retention_time,
 )
 from pda_peak_finder.peak_detection.deconvolution import compute_baseline
 from pda_peak_finder.plotting import (
@@ -124,6 +125,10 @@ def analyse(data: PDAData, params: dict):
     table.source_label = base.label
     annotate_peaks(data, table)
     n_before = len(table)
+    if params["rt_on"]:
+        table = filter_peaks_by_retention_time(
+            table, rt_min=params["rt_min"], rt_max=params["rt_max"]
+        )
     if params["monitor_on"]:
         table = filter_peaks_by_absorbance(
             table, params["monitor_wl"], min_absorbance=params["monitor_min_abs"]
@@ -137,11 +142,11 @@ def analyse(data: PDAData, params: dict):
     return base, table, n_before, components
 
 
-def peak_dataframe(table, monitor_wl: float, uv_scale: float, height_unit: str) -> pd.DataFrame:
+def peak_dataframe(table, monitor_wl: float) -> pd.DataFrame:
     rows = []
     for p in table:
         a_mon = absorbance_at(p.spectrum, monitor_wl) if p.spectrum is not None else np.nan
-        row = {
+        rows.append({
             "peak_id": p.peak_id,
             "RT (min)": round(p.apex_time, 4),
             "FWHM (min)": round(p.fwhm, 4) if p.fwhm else None,
@@ -149,10 +154,7 @@ def peak_dataframe(table, monitor_wl: float, uv_scale: float, height_unit: str) 
             f"A@{monitor_wl:.0f}nm (AU)": round(float(a_mon), 5),
             "height (AU)": round(p.height, 5),
             "area (AU·min)": round(p.area, 6) if p.area else None,
-        }
-        if height_unit != "AU":
-            row[f"height ({height_unit})"] = round(p.height * uv_scale, 1)
-        rows.append(row)
+        })
     return pd.DataFrame(rows)
 
 
@@ -230,29 +232,27 @@ min_distance = st.sidebar.slider("最小ピーク間隔 (min)", 0.0, 1.0, 0.05, 
 min_height_on = st.sidebar.checkbox("最小高さを使う", value=False)
 min_height = st.sidebar.slider("最小高さ (AU)", 0.0, 1.0, 0.05, 0.01) if min_height_on else None
 
+st.sidebar.subheader("保持時間フィルタ(任意)")
+# Drop the solvent front / injection dip at the start, or trailing junk at
+# the end, by keeping only peaks whose RT is inside [rt_min, rt_max].
+rt_on = st.sidebar.checkbox("範囲外の保持時間のピークを除外", value=False)
+rt_span_hi = 60.0
+if datasets:
+    rt_span_hi = max(float(d.times[-1]) for d in datasets)
+rt_min, rt_max = st.sidebar.slider(
+    "保持時間の範囲 (min)", 0.0, round(rt_span_hi, 2), (0.0, round(rt_span_hi, 2)),
+    0.05, format="%.2f",
+    help="この範囲の外(溶媒フロントや終端の夾雑)に溶出するピークを除外。",
+)
+
 st.sidebar.subheader("ピーク高さ範囲フィルタ")
 # default OFF: low-absorbance real peaks (e.g. late, high-retention runs at
 # 230 nm) can fall below a height threshold — filtering risks losing them.
 height_on = st.sidebar.checkbox("範囲外の高さのピークを除外", value=False)
-height_unit = st.sidebar.radio(
-    "高さの単位", ["AU", "µV"], index=0, horizontal=True,
-    help="Empower と同じ AU、または検出器出力 µV(換算係数を指定)。",
+height_min_au, height_max_au = st.sidebar.slider(
+    "ピーク高さ範囲 (AU)", 0.0, 0.2, (0.001, 0.05), 0.001, format="%.3f",
+    help="溶媒フロント(高)と微小ノイズ(低)を除外。230nm の解析ピークは概ね 0.0015–0.013 AU。",
 )
-if height_unit == "AU":
-    uv_scale = 1.0
-    height_min_au, height_max_au = st.sidebar.slider(
-        "ピーク高さ範囲 (AU)", 0.0, 0.2, (0.001, 0.05), 0.001, format="%.3f",
-        help="溶媒フロント(高)と微小ノイズ(低)を除外。230nm の解析ピークは概ね 0.0015–0.013 AU。",
-    )
-else:
-    uv_scale = st.sidebar.number_input(
-        "AU → µV 換算 (1 AU = ? µV)", 1.0, 10_000_000.0, 1_000_000.0, 1000.0,
-        help="検出器の µV↔AU 換算係数(1 V/AU なら 1e6)。",
-    )
-    lo_uv, hi_uv = st.sidebar.slider(
-        "ピーク高さ範囲 (µV)", 0, 200000, (1000, 50000), 500,
-    )
-    height_min_au, height_max_au = lo_uv / uv_scale, hi_uv / uv_scale
 
 st.sidebar.subheader("モニタ波長フィルタ(任意)")
 monitor_on = st.sidebar.checkbox("指定波長で吸収の弱いピークを除外", value=False)
@@ -301,7 +301,8 @@ params = dict(
     deconvolve=deconvolve, decon_model=decon_model, fwhm_fraction=fwhm_fraction,
     min_prominence=min_prominence, min_distance=min_distance, min_height=min_height,
     monitor_on=monitor_on, monitor_wl=monitor_wl, monitor_min_abs=monitor_min_abs,
-    height_on=height_on, uv_scale=uv_scale, height_unit=height_unit,
+    rt_on=rt_on, rt_min=rt_min, rt_max=rt_max,
+    height_on=height_on,
     height_min_au=height_min_au, height_max_au=height_max_au,
     wl_range=wl_range,
 )
@@ -332,7 +333,8 @@ tables = [t for _, _, t, _, _ in results]
 st.header("① クロマトグラムと検出ピーク")
 for data, mp, table, n_before, components in results:
     st.subheader(f"{data.metadata.injection_id} — {len(table)} ピーク"
-                 + (f"(除外 {n_before - len(table)})" if (monitor_on or height_on) else ""))
+                 + (f"(除外 {n_before - len(table)})"
+                    if (rt_on or monitor_on or height_on) else ""))
     if components is not None:  # deconvolution view: separated components
         dt = float(np.median(np.diff(mp.times)))
         base = compute_baseline(mp.values, dt, DeconvolutionConfig(model=params["decon_model"]))
@@ -344,12 +346,11 @@ for data, mp, table, n_before, components in results:
     else:
         fig = plot_labeled_chromatogram(
             mp, table, label_attr=label_attr, normalize=normalize,
-            y_scale=uv_scale, y_unit=height_unit,
         )
         st.pyplot(fig, use_container_width=True)
 
     with st.expander("ピークテーブル / UV スペクトル / コンター"):
-        df = peak_dataframe(table, monitor_wl, uv_scale, height_unit)
+        df = peak_dataframe(table, monitor_wl)
         st.dataframe(df, use_container_width=True, hide_index=True)
         st.download_button(
             "CSV ダウンロード", df.to_csv(index=False).encode("utf-8"),
