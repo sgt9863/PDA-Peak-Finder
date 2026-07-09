@@ -90,16 +90,19 @@ def _decimate(data: PDAData, max_scans: int = 1500) -> PDAData:
 # Analysis (fast — recomputed live as sliders move)
 # --------------------------------------------------------------------------
 def analyse(data: PDAData, params: dict):
-    mp = data.maxplot(wavelength_range=params["wl_range"])
+    if params["base_wl"] is not None:
+        base = data.chromatogram_at(params["base_wl"], params["base_bw"])
+    else:
+        base = data.maxplot(wavelength_range=params["wl_range"])
     table = detect_peaks(
-        mp,
+        base,
         PeakDetectionConfig(
             min_height=params["min_height"],
             min_prominence=params["min_prominence"],
             min_distance_min=params["min_distance"],
         ),
     )
-    table.source_label = mp.label
+    table.source_label = base.label
     annotate_peaks(data, table)
     n_before = len(table)
     if params["monitor_on"]:
@@ -107,31 +110,30 @@ def analyse(data: PDAData, params: dict):
             table, params["monitor_wl"], min_absorbance=params["monitor_min_abs"]
         )
     if params["height_on"]:
-        # sidebar range is in µV; models are AU -> divide by the AU→µV scale
         table = filter_peaks_by_height(
             table,
-            min_height=params["height_min_uv"] / params["uv_scale"],
-            max_height=params["height_max_uv"] / params["uv_scale"],
+            min_height=params["height_min_au"],
+            max_height=params["height_max_au"],
         )
-    return mp, table, n_before
+    return base, table, n_before
 
 
-def peak_dataframe(table, monitor_wl: float, uv_scale: float) -> pd.DataFrame:
+def peak_dataframe(table, monitor_wl: float, uv_scale: float, height_unit: str) -> pd.DataFrame:
     rows = []
     for p in table:
         a_mon = absorbance_at(p.spectrum, monitor_wl) if p.spectrum is not None else np.nan
-        rows.append(
-            {
-                "peak_id": p.peak_id,
-                "RT (min)": round(p.apex_time, 3),
-                "FWHM (min)": round(p.fwhm, 4) if p.fwhm else None,
-                "λmax (nm)": round(p.lambda_max, 1) if p.lambda_max else None,
-                f"A@{monitor_wl:.0f}nm (AU)": round(float(a_mon), 5),
-                "height (AU)": round(p.height, 4),
-                "height (µV)": round(p.height * uv_scale, 1),
-                "area (AU·min)": round(p.area, 5) if p.area else None,
-            }
-        )
+        row = {
+            "peak_id": p.peak_id,
+            "RT (min)": round(p.apex_time, 4),
+            "FWHM (min)": round(p.fwhm, 4) if p.fwhm else None,
+            "λmax (nm)": round(p.lambda_max, 1) if p.lambda_max else None,
+            f"A@{monitor_wl:.0f}nm (AU)": round(float(a_mon), 5),
+            "height (AU)": round(p.height, 5),
+            "area (AU·min)": round(p.area, 6) if p.area else None,
+        }
+        if height_unit != "AU":
+            row[f"height ({height_unit})"] = round(p.height * uv_scale, 1)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -168,31 +170,59 @@ else:
     datasets = [synthetic_pdadata(injection_id=f"DEMO{i+1}") for i in range(n)]
 
 st.sidebar.divider()
+st.sidebar.subheader("検出トレース")
+trace_kind = st.sidebar.radio(
+    "ピーク検出に使うクロマトグラム",
+    ["230 nm 単一波長", "MaxPlot(全波長最大)"], index=0,
+    help="Empower の 230 nm 表示に合わせるには単一波長を選択。MaxPlot は全波長の最大吸光度の包絡線。",
+)
+if trace_kind.startswith("230"):
+    base_wl = st.sidebar.number_input("検出波長 (nm)", 190.0, 800.0, 230.0, 1.0)
+    base_bw = st.sidebar.number_input("バンド幅 (nm, 0=最近点)", 0.0, 20.0, 0.0, 1.0)
+    prom_default, prom_max, prom_step = 0.0006, 0.02, 0.0001
+else:
+    base_wl, base_bw = None, 0.0
+    prom_default, prom_max, prom_step = 0.02, 0.5, 0.005
+
 st.sidebar.subheader("ピーク検出")
-min_prominence = st.sidebar.slider("最小プロミネンス (AU)", 0.0, 0.5, 0.02, 0.005)
+min_prominence = st.sidebar.slider(
+    "最小プロミネンス (AU)", 0.0, prom_max, prom_default, prom_step, format="%.4f"
+)
 min_distance = st.sidebar.slider("最小ピーク間隔 (min)", 0.0, 1.0, 0.05, 0.01)
 min_height_on = st.sidebar.checkbox("最小高さを使う", value=False)
 min_height = st.sidebar.slider("最小高さ (AU)", 0.0, 1.0, 0.05, 0.01) if min_height_on else None
 
-st.sidebar.subheader("モニタ波長フィルタ")
-monitor_on = st.sidebar.checkbox("指定波長で吸収の弱いピークを除外", value=True)
+st.sidebar.subheader("ピーク高さ範囲フィルタ")
+height_on = st.sidebar.checkbox("範囲外の高さのピークを除外", value=True)
+height_unit = st.sidebar.radio(
+    "高さの単位", ["AU", "µV"], index=0, horizontal=True,
+    help="Empower と同じ AU、または検出器出力 µV(換算係数を指定)。",
+)
+if height_unit == "AU":
+    uv_scale = 1.0
+    height_min_au, height_max_au = st.sidebar.slider(
+        "ピーク高さ範囲 (AU)", 0.0, 0.2, (0.001, 0.05), 0.001, format="%.3f",
+        help="溶媒フロント(高)と微小ノイズ(低)を除外。230nm の解析ピークは概ね 0.0015–0.013 AU。",
+    )
+else:
+    uv_scale = st.sidebar.number_input(
+        "AU → µV 換算 (1 AU = ? µV)", 1.0, 10_000_000.0, 1_000_000.0, 1000.0,
+        help="検出器の µV↔AU 換算係数(1 V/AU なら 1e6)。",
+    )
+    lo_uv, hi_uv = st.sidebar.slider(
+        "ピーク高さ範囲 (µV)", 0, 200000, (1000, 50000), 500,
+    )
+    height_min_au, height_max_au = lo_uv / uv_scale, hi_uv / uv_scale
+
+st.sidebar.subheader("モニタ波長フィルタ(任意)")
+monitor_on = st.sidebar.checkbox("指定波長で吸収の弱いピークを除外", value=False)
 monitor_wl = st.sidebar.number_input("モニタ波長 (nm)", 190.0, 800.0, 230.0, 1.0)
 monitor_min_abs = st.sidebar.slider("除外閾値 A (AU)", 0.0, 0.2, 0.01, 0.001)
 
-st.sidebar.subheader("ピーク高さ範囲フィルタ")
-height_on = st.sidebar.checkbox("範囲外の高さのピークを除外", value=True)
-uv_scale = st.sidebar.number_input(
-    "AU → µV 換算 (1 AU = ? µV)", 1.0, 1_000_000.0, 1000.0, 100.0,
-    help="このデータは AU 単位。ピーク高さを µV で扱うための換算係数。",
-)
-height_min_uv, height_max_uv = st.sidebar.slider(
-    "ピーク高さ範囲 (µV)", 0, 20000, (100, 10000), 50
-)
-
 st.sidebar.subheader("表示 / トラッキング")
 label_attr = st.sidebar.selectbox(
-    "ピークラベル", ["lambda_max", "peak_id", "apex_time"],
-    format_func={"lambda_max": "λmax", "peak_id": "ピークID", "apex_time": "保持時間"}.get,
+    "ピークラベル", ["apex_time", "lambda_max", "peak_id"],
+    format_func={"lambda_max": "λmax", "peak_id": "ピークID", "apex_time": "保持時間 (RT)"}.get,
 )
 normalize = st.sidebar.checkbox("Y軸ノーマライズ", value=False)
 rt_tol = st.sidebar.slider("トラッキング RT 許容差 (min)", 0.01, 1.0, 0.2, 0.01)
@@ -207,10 +237,11 @@ if use_wl_range and datasets:
     )
 
 params = dict(
+    base_wl=base_wl, base_bw=base_bw,
     min_prominence=min_prominence, min_distance=min_distance, min_height=min_height,
     monitor_on=monitor_on, monitor_wl=monitor_wl, monitor_min_abs=monitor_min_abs,
-    height_on=height_on, uv_scale=uv_scale,
-    height_min_uv=height_min_uv, height_max_uv=height_max_uv,
+    height_on=height_on, uv_scale=uv_scale, height_unit=height_unit,
+    height_min_au=height_min_au, height_max_au=height_max_au,
     wl_range=wl_range,
 )
 
@@ -243,12 +274,12 @@ for data, mp, table, n_before in results:
                  + (f"(除外 {n_before - len(table)})" if monitor_on else ""))
     fig = plot_labeled_chromatogram(
         mp, table, label_attr=label_attr, normalize=normalize,
-        y_scale=uv_scale, y_unit="µV",
+        y_scale=uv_scale, y_unit=height_unit,
     )
     st.pyplot(fig, use_container_width=True)
 
     with st.expander("ピークテーブル / UV スペクトル / コンター"):
-        df = peak_dataframe(table, monitor_wl, uv_scale)
+        df = peak_dataframe(table, monitor_wl, uv_scale, height_unit)
         st.dataframe(df, use_container_width=True, hide_index=True)
         st.download_button(
             "CSV ダウンロード", df.to_csv(index=False).encode("utf-8"),

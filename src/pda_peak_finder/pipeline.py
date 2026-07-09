@@ -41,6 +41,11 @@ class AnalysisConfig:
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     #: Restrict the MaxPlot to this wavelength window (nm), or None for full range.
     wavelength_range: tuple[float, float] | None = None
+    #: Detect on the single-wavelength chromatogram at this wavelength (nm),
+    #: e.g. 230 to mirror Empower's 230 nm trace. None = detect on the MaxPlot.
+    base_wavelength: float | None = None
+    #: Averaging bandwidth (nm) around ``base_wavelength`` (0 = nearest point).
+    base_bandwidth: float = 0.0
     #: Drop peaks with little/no absorbance at this monitoring wavelength (nm).
     #: None disables the filter.
     monitor_wavelength: float | None = None
@@ -73,9 +78,12 @@ def analyze_injection(
     extracted UV spectrum.
     """
     config = config or AnalysisConfig()
-    maxplot = data.maxplot(wavelength_range=config.wavelength_range)
-    table = detect_peaks(maxplot, config.detection)
-    table.source_label = maxplot.label
+    if config.base_wavelength is not None:
+        base = data.chromatogram_at(config.base_wavelength, config.base_bandwidth)
+    else:
+        base = data.maxplot(wavelength_range=config.wavelength_range)
+    table = detect_peaks(base, config.detection)
+    table.source_label = base.label
     annotate_peaks(data, table, config.spectrum)
     if config.monitor_wavelength is not None:
         table = filter_peaks_by_absorbance(
