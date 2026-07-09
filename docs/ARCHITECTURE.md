@@ -112,6 +112,9 @@ PDA-Peak-Finder/
 - 各ピークに RT(apex_time)・height・積分区間(start/end)・**FWHM**・area を付与。
 - 実装は `scipy.signal`(`find_peaks`, `peak_widths`, 任意で `savgol_filter`)。
 - 調整パラメータは `PeakDetectionConfig`(prominence・最小間隔・平滑化など)。
+- `detect_peaks_deconvolved`(`DeconvolutionConfig`):**重なり分離**。ベースライン除去 →
+  種+ショルダー(2次微分)検出 → 谷の浅い群を EMG/ガウス成分の和でフィット → 各成分の
+  RT・FWHM・面積を分離抽出。フィット失敗時は種推定にフォールバックし、ピークを落とさない。
 - `filter_peaks_by_height` で高さ範囲外(AU)のピークを除外(検出器単位 µV は呼び出し側で AU に換算)。
 
 ### spectra — UV スペクトル抽出・λmax

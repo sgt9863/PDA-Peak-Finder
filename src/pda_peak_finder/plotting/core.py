@@ -258,6 +258,52 @@ def plot_chromatogram(
     return fig
 
 
+def plot_deconvolution(
+    chromatogram: Chromatogram,
+    components,
+    table: PeakTable | None = None,
+    ax=None,
+    *,
+    xlim: tuple[float, float] | None = None,
+    colors=None,
+) -> Figure:
+    """Show the raw trace with each deconvolved component drawn separately.
+
+    ``components`` is the ``(t, y)`` list returned by
+    :func:`~pda_peak_finder.peak_detection.detect_peaks_deconvolved` with
+    ``return_components=True``. Each fitted component is filled in its own
+    colour so overlapping/co-eluting peaks are visibly separated; the raw
+    chromatogram is overlaid in black and peaks are labelled by RT.
+    """
+    fig, ax = _resolve_ax(ax, figsize=(12, 4.8))
+    comps = list(components)
+    colors = colors or peak_palette(len(comps))
+
+    ax.plot(chromatogram.times, chromatogram.values, color="black",
+            linewidth=1.0, zorder=5, label="測定トレース")
+    for i, (t, y) in enumerate(comps):
+        c = colors[i % len(colors)]
+        ax.fill_between(t, y, color=c, alpha=0.35, zorder=2)
+        ax.plot(t, y, color=c, linewidth=0.9, zorder=3)
+
+    if table is not None:
+        lo, hi = xlim if xlim else (chromatogram.times[0], chromatogram.times[-1])
+        for pk in table:
+            if lo <= pk.apex_time <= hi:
+                ax.annotate(f"{pk.apex_time:.3f}", xy=(pk.apex_time, pk.height),
+                            xytext=(0, 3), textcoords="offset points", rotation=90,
+                            ha="center", va="bottom", fontsize=7, color="0.25")
+
+    if xlim:
+        ax.set_xlim(*xlim)
+    ax.set_xlabel("保持時間 / Retention time (min)")
+    ax.set_ylabel("Absorbance (AU)")
+    ax.set_title(f"デコンボリューション {chromatogram.label} ({chromatogram.injection_id})")
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    return fig
+
+
 def plot_contour(data: PDAData, ax=None, levels: int = 30) -> Figure:
     """2D contour plot of absorbance with time on x and wavelength on y."""
     fig, ax = _resolve_ax(ax)

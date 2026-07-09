@@ -26,17 +26,22 @@ import streamlit as st
 from pda_peak_finder import __version__
 from pda_peak_finder.models import PDAData
 from pda_peak_finder.peak_detection import (
+    DeconvolutionConfig,
     PeakDetectionConfig,
     detect_peaks,
+    detect_peaks_deconvolved,
     filter_peaks_by_height,
 )
+from pda_peak_finder.peak_detection.deconvolution import _baseline
 from pda_peak_finder.plotting import (
     configure_japanese_font,
     plot_contour,
+    plot_deconvolution,
     plot_labeled_chromatogram,
     plot_tracking,
     plot_uv_spectra,
 )
+from pda_peak_finder.models import Chromatogram
 from pda_peak_finder.reader import load
 from pda_peak_finder.spectra import (
     absorbance_at,
@@ -94,14 +99,26 @@ def analyse(data: PDAData, params: dict):
         base = data.chromatogram_at(params["base_wl"], params["base_bw"])
     else:
         base = data.maxplot(wavelength_range=params["wl_range"])
-    table = detect_peaks(
-        base,
-        PeakDetectionConfig(
-            min_height=params["min_height"],
-            min_prominence=params["min_prominence"],
-            min_distance_min=params["min_distance"],
-        ),
-    )
+    components = None
+    if params["deconvolve"]:
+        table, components = detect_peaks_deconvolved(
+            base,
+            DeconvolutionConfig(
+                model=params["decon_model"],
+                min_prominence=params["min_prominence"],
+                min_distance_min=params["min_distance"],
+            ),
+            return_components=True,
+        )
+    else:
+        table = detect_peaks(
+            base,
+            PeakDetectionConfig(
+                min_height=params["min_height"],
+                min_prominence=params["min_prominence"],
+                min_distance_min=params["min_distance"],
+            ),
+        )
     table.source_label = base.label
     annotate_peaks(data, table)
     n_before = len(table)
@@ -115,7 +132,7 @@ def analyse(data: PDAData, params: dict):
             min_height=params["height_min_au"],
             max_height=params["height_max_au"],
         )
-    return base, table, n_before
+    return base, table, n_before, components
 
 
 def peak_dataframe(table, monitor_wl: float, uv_scale: float, height_unit: str) -> pd.DataFrame:
@@ -184,6 +201,18 @@ else:
     base_wl, base_bw = None, 0.0
     prom_default, prom_max, prom_step = 0.02, 0.5, 0.005
 
+st.sidebar.subheader("検出方法")
+deconvolve = st.sidebar.checkbox(
+    "重なり分離(デコンボリューション)", value=False,
+    help="共溶出・ショルダーを成分フィットで分離し、被っても各ピークの RT・FWHM を取得。重回帰用。",
+)
+decon_model = "emg"
+if deconvolve:
+    decon_model = st.sidebar.selectbox(
+        "ピークモデル", ["emg", "gauss"],
+        format_func={"emg": "EMG(テーリング対応)", "gauss": "ガウス"}.get,
+    )
+
 st.sidebar.subheader("ピーク検出")
 min_prominence = st.sidebar.slider(
     "最小プロミネンス (AU)", 0.0, prom_max, prom_default, prom_step, format="%.4f"
@@ -238,6 +267,7 @@ if use_wl_range and datasets:
 
 params = dict(
     base_wl=base_wl, base_bw=base_bw,
+    deconvolve=deconvolve, decon_model=decon_model,
     min_prominence=min_prominence, min_distance=min_distance, min_height=min_height,
     monitor_on=monitor_on, monitor_wl=monitor_wl, monitor_min_abs=monitor_min_abs,
     height_on=height_on, uv_scale=uv_scale, height_unit=height_unit,
@@ -260,23 +290,32 @@ results = [(d, *analyse(d, params)) for d in datasets]
 # summary metrics
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("インジェクション数", len(datasets))
-c2.metric("検出ピーク合計", sum(len(t) for _, _, t, _ in results))
+c2.metric("検出ピーク合計", sum(len(t) for _, _, t, _, _ in results))
 if monitor_on or height_on:
-    dropped = sum(nb - len(t) for _, _, t, nb in results)
+    dropped = sum(nb - len(t) for _, _, t, nb, _ in results)
     c3.metric("フィルタで除外", dropped)
 c4.metric("波長点数", datasets[0].absorbance.shape[1])
 
-tables = [t for _, _, t, _ in results]
+tables = [t for _, _, t, _, _ in results]
 
-st.header("① ラベル付きクロマトグラム (QDa/SIR スタイル)")
-for data, mp, table, n_before in results:
+st.header("① クロマトグラムと検出ピーク")
+for data, mp, table, n_before, components in results:
     st.subheader(f"{data.metadata.injection_id} — {len(table)} ピーク"
-                 + (f"(除外 {n_before - len(table)})" if monitor_on else ""))
-    fig = plot_labeled_chromatogram(
-        mp, table, label_attr=label_attr, normalize=normalize,
-        y_scale=uv_scale, y_unit=height_unit,
-    )
-    st.pyplot(fig, use_container_width=True)
+                 + (f"(除外 {n_before - len(table)})" if (monitor_on or height_on) else ""))
+    if components is not None:  # deconvolution view: separated components
+        dt = float(np.median(np.diff(mp.times)))
+        base = _baseline(mp.values, dt, 1.0)
+        chsub = Chromatogram(times=mp.times, values=mp.values - base,
+                             label=mp.label, injection_id=mp.injection_id)
+        st.pyplot(plot_deconvolution(chsub, components, table),
+                  use_container_width=True)
+        st.caption("黒=ベースライン減算した測定トレース、色=分離した各ピーク成分(重なりも分離)")
+    else:
+        fig = plot_labeled_chromatogram(
+            mp, table, label_attr=label_attr, normalize=normalize,
+            y_scale=uv_scale, y_unit=height_unit,
+        )
+        st.pyplot(fig, use_container_width=True)
 
     with st.expander("ピークテーブル / UV スペクトル / コンター"):
         df = peak_dataframe(table, monitor_wl, uv_scale, height_unit)

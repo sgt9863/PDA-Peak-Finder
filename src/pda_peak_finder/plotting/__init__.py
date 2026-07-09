@@ -7,6 +7,7 @@ from .core import (
     peak_palette,
     plot_chromatogram,
     plot_contour,
+    plot_deconvolution,
     plot_labeled_chromatogram,
     plot_tracking,
     plot_uv_spectra,
@@ -16,6 +17,7 @@ from .core import (
 __all__ = [
     "plot_chromatogram",
     "plot_labeled_chromatogram",
+    "plot_deconvolution",
     "plot_contour",
     "plot_uv_spectra",
     "plot_tracking",

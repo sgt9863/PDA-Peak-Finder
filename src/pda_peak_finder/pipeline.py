@@ -19,7 +19,13 @@ from typing import Iterable, Sequence
 
 from . import export
 from .models import PDAData, PeakTable, TrackingResult
-from .peak_detection import PeakDetectionConfig, detect_peaks, filter_peaks_by_height
+from .peak_detection import (
+    DeconvolutionConfig,
+    PeakDetectionConfig,
+    detect_peaks,
+    detect_peaks_deconvolved,
+    filter_peaks_by_height,
+)
 from .plotting import (
     plot_chromatogram,
     plot_contour,
@@ -37,6 +43,11 @@ class AnalysisConfig:
     """Run-wide configuration for the whole pipeline."""
 
     detection: PeakDetectionConfig = field(default_factory=PeakDetectionConfig)
+    #: Separate overlapping/co-eluting peaks by curve fitting so each peak's
+    #: RT and FWHM survive overlap (for the regression data). Uses
+    #: ``deconvolution`` instead of ``detection`` when True.
+    deconvolve: bool = False
+    deconvolution: DeconvolutionConfig = field(default_factory=DeconvolutionConfig)
     spectrum: SpectrumConfig = field(default_factory=SpectrumConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     #: Restrict the MaxPlot to this wavelength window (nm), or None for full range.
@@ -82,7 +93,10 @@ def analyze_injection(
         base = data.chromatogram_at(config.base_wavelength, config.base_bandwidth)
     else:
         base = data.maxplot(wavelength_range=config.wavelength_range)
-    table = detect_peaks(base, config.detection)
+    if config.deconvolve:
+        table = detect_peaks_deconvolved(base, config.deconvolution)
+    else:
+        table = detect_peaks(base, config.detection)
     table.source_label = base.label
     annotate_peaks(data, table, config.spectrum)
     if config.monitor_wavelength is not None:
