@@ -87,3 +87,22 @@ def test_sequential_bridges_a_one_condition_gap():
     # gap scaling (0.3 * 2 = 0.6) bridges the 0.4 min shift across the gap
     assert len(seq.groups) == 1
     assert len(seq.groups[0].members) == 2
+
+
+def test_peak_matrix_wide_format():
+    from pda_peak_finder.export import peak_matrix_table
+    from pda_peak_finder.tracking import track_peaks, TrackingConfig
+    a = PeakTable(injection_id="R1", peaks=[_peak(3.0, 254, "R1", fwhm=0.10),
+                                            _peak(6.0, 280, "R1", fwhm=0.12)])
+    b = PeakTable(injection_id="R2", peaks=[_peak(3.1, 254, "R2", fwhm=0.11)])
+    res = track_peaks([a, b], TrackingConfig(use_spectral=True))
+    m = peak_matrix_table(res)
+    # one row per run; tR_/Wh_ column pair per tracked peak (ordered by RT)
+    assert list(m["injection"]) == ["R1", "R2"]
+    assert m.columns[0] == "injection"
+    assert "tR_P01" in m.columns and "Wh_P01" in m.columns
+    r1 = m.set_index("injection").loc["R1"]
+    assert r1["tR_P01"] == 3.0 and r1["Wh_P01"] == 0.10
+    # peak only in R1 -> NaN for R2
+    import pandas as pd
+    assert pd.isna(m.set_index("injection").loc["R2"]["tR_P02"])

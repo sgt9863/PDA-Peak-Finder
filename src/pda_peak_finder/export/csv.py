@@ -93,6 +93,43 @@ def write_regression_table(result: TrackingResult, path: str | Path) -> Path:
     return out
 
 
+def peak_matrix_table(
+    result: TrackingResult, name_prefix: str = "P"
+) -> pd.DataFrame:
+    """Wide per-run table of each tracked peak's retention time and width.
+
+    One row per injection (run); for every tracked peak (a group, ordered by
+    mean retention time and named ``<prefix>01``, ``<prefix>02``, ...) two
+    columns ``tR_<name>`` and ``Wh_<name>``. This mirrors the layout of an
+    Empower-style transcription (``Run, ..., tR_TP, tR_IP1, ..., Wh_TP, ...``);
+    join your condition metadata (T, F, ...) on the ``injection`` column.
+    Missing detections are NaN.
+    """
+    groups = sorted(result.groups, key=lambda g: g.mean_rt)
+    names = [f"{name_prefix}{i:02d}" for i in range(1, len(groups) + 1)]
+    columns = ["injection"]
+    for nm in names:
+        columns += [f"tR_{nm}", f"Wh_{nm}"]
+    rows = []
+    for inj in result.injection_ids:
+        row: dict = {"injection": inj}
+        for nm, g in zip(names, groups):
+            peak = g.members.get(inj)
+            row[f"tR_{nm}"] = peak.apex_time if peak is not None else None
+            row[f"Wh_{nm}"] = peak.fwhm if peak is not None else None
+        rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def write_peak_matrix(
+    result: TrackingResult, path: str | Path, name_prefix: str = "P"
+) -> Path:
+    """Write the wide per-run tR/Wh peak matrix to ``path``."""
+    out = _resolve_path(path)
+    peak_matrix_table(result, name_prefix).to_csv(out, index=False)
+    return out
+
+
 def write_peak_spectra(table: PeakTable, path: str | Path) -> Path:
     """Write long-form UV spectra for every peak in ``table`` that has one.
 

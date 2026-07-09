@@ -176,6 +176,8 @@ def _write_outputs(
         )
         # tidy per-(compound, condition) table for multiple-regression fitting
         export.write_regression_table(tracking, output_dir / "regression_long.csv")
+        # wide per-run tR/Wh matrix (one row per run, tR_/Wh_ per tracked peak)
+        export.write_peak_matrix(tracking, output_dir / "peak_rt_width_matrix.csv")
 
     if not do_plots:
         return

@@ -49,7 +49,7 @@ from pda_peak_finder.spectra import (
     filter_peaks_by_absorbance,
 )
 from pda_peak_finder.tracking import TrackingConfig, track_peaks
-from pda_peak_finder.export import regression_table
+from pda_peak_finder.export import peak_matrix_table, regression_table
 from pda_peak_finder.testing import synthetic_pdadata
 
 configure_japanese_font()
@@ -375,19 +375,31 @@ if len(tables) > 1:
                + ("(スペクトル類似度で同定)" if track_spectral else "(RT で同定)"))
     st.pyplot(plot_tracking(result), use_container_width=True)
 
-    st.subheader("重回帰用テーブル(ピーク × 条件)")
-    reg = regression_table(result)
-    st.dataframe(reg, use_container_width=True, hide_index=True)
-    col_r, col_f = st.columns(2)
-    col_r.download_button(
-        "重回帰テーブル (long) CSV", reg.to_csv(index=False).encode("utf-8"),
-        file_name="regression_long.csv", mime="text/csv",
+    st.subheader("ピーク RT・幅 行列(run × ピーク)")
+    st.caption("渡された正解CSVと同じ形式:1行=1 run、各ピークに tR_・Wh_ 列。"
+               "条件(T/F 等)は injection 列で結合してください。")
+    matrix = peak_matrix_table(result)
+    st.dataframe(matrix, use_container_width=True, hide_index=True)
+    st.download_button(
+        "⬇ ピーク RT・幅 行列 CSV (run × ピーク)",
+        matrix.to_csv(index=False).encode("utf-8-sig"),
+        file_name="peak_rt_width_matrix.csv", mime="text/csv",
+        type="primary",
     )
-    col_f.download_button(
-        "FWHM 行列 CSV",
-        result.to_dataframe(value="fwhm").to_csv(index=False).encode("utf-8"),
-        file_name="tracking_fwhm.csv", mime="text/csv",
-    )
+
+    with st.expander("その他のエクスポート(long 形式 / FWHM 行列)"):
+        reg = regression_table(result)
+        st.dataframe(reg, use_container_width=True, hide_index=True)
+        col_r, col_f = st.columns(2)
+        col_r.download_button(
+            "重回帰テーブル (long) CSV", reg.to_csv(index=False).encode("utf-8-sig"),
+            file_name="regression_long.csv", mime="text/csv",
+        )
+        col_f.download_button(
+            "FWHM 行列 CSV",
+            result.to_dataframe(value="fwhm").to_csv(index=False).encode("utf-8-sig"),
+            file_name="tracking_fwhm.csv", mime="text/csv",
+        )
 
 st.caption(
     "検出トレース(230nm 等 / MaxPlot)でピーク検出(任意で重なり分離)→ apex スペクトルで λmax "
