@@ -23,9 +23,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import sparse
 from scipy.ndimage import maximum_filter1d, minimum_filter1d, uniform_filter1d
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, savgol_filter
+from scipy.sparse.linalg import spsolve
 from scipy.stats import exponnorm
 
 from ..models import Chromatogram, Peak, PeakTable
@@ -41,6 +43,12 @@ class DeconvolutionConfig:
     smoothing_window: int | None = 11  # Savitzky-Golay window (samples) for seeding
     smoothing_polyorder: int = 3
     shoulder_rel_prominence: float = 0.05  # 2nd-deriv shoulder seed sensitivity
+    #: Baseline method: "als" (asymmetric least squares — follows broad humps
+    #: under dense clusters) or "opening" (fast morphological, flat offsets only).
+    baseline_method: str = "als"
+    als_lambda: float = 1e6            # ALS smoothness (larger = stiffer baseline)
+    als_p: float = 0.005              # ALS asymmetry (small = baseline hugs valleys)
+    als_niter: int = 10
     baseline_window_min: float = 1.0   # rolling-opening baseline window (minutes)
     overlap_valley_ratio: float = 0.5  # group peaks whose valley stays above this
     max_peaks_per_cluster: int = 5     # split clusters larger than this (speed)
@@ -164,6 +172,38 @@ def _baseline(values, dt, window_min):
     return uniform_filter1d(opened, w)
 
 
+def _als_baseline(y, lam=1e6, p=0.005, niter=10):
+    """Asymmetric Least Squares baseline (Eilers & Boelens).
+
+    Follows broad drift and humps beneath dense peak clusters while ignoring
+    the peaks themselves, so co-eluting sharp peaks sitting on a hump are not
+    swallowed by a spurious wide component. ``lam`` sets stiffness, ``p`` the
+    asymmetry (small p pulls the baseline down toward the valleys).
+    """
+    y = np.asarray(y, dtype=float)
+    L = len(y)
+    if L < 3:
+        return np.zeros_like(y)
+    D = sparse.diags([1.0, -2.0, 1.0], [0, -1, -2], shape=(L, L - 2), format="csc")
+    DTD = lam * (D @ D.T)
+    w = np.ones(L)
+    z = y
+    for _ in range(niter):
+        W = sparse.spdiags(w, 0, L, L, format="csc")
+        z = spsolve((W + DTD).tocsc(), w * y)
+        w = p * (y > z) + (1.0 - p) * (y < z)
+    return z
+
+
+def compute_baseline(values, dt, config: "DeconvolutionConfig | None" = None):
+    """Baseline for a signal per ``config.baseline_method`` (ALS or opening)."""
+    config = config or DeconvolutionConfig()
+    if config.baseline_method == "opening":
+        return _baseline(values, dt, config.baseline_window_min)
+    return _als_baseline(np.asarray(values, float), config.als_lambda,
+                         config.als_p, config.als_niter)
+
+
 def _split_large(group, values, max_size):
     """Split a large cluster at its deepest internal valleys until each chunk
     has at most ``max_size`` seeds. Splitting at the most-resolved boundaries
@@ -245,7 +285,7 @@ def detect_peaks_deconvolved(
     p = _n_params(model)
     total_fn, comp_fn = _model_sum(model)
 
-    baseline = _baseline(raw, dt, config.baseline_window_min)
+    baseline = compute_baseline(raw, dt, config)
     values = raw - baseline  # baseline-subtracted; fits/seeds work on this
 
     seeds = _seed_apexes(times, values, config)

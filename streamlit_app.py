@@ -32,7 +32,7 @@ from pda_peak_finder.peak_detection import (
     detect_peaks_deconvolved,
     filter_peaks_by_height,
 )
-from pda_peak_finder.peak_detection.deconvolution import _baseline
+from pda_peak_finder.peak_detection.deconvolution import compute_baseline
 from pda_peak_finder.plotting import (
     configure_japanese_font,
     plot_contour,
@@ -325,7 +325,7 @@ for data, mp, table, n_before, components in results:
                  + (f"(除外 {n_before - len(table)})" if (monitor_on or height_on) else ""))
     if components is not None:  # deconvolution view: separated components
         dt = float(np.median(np.diff(mp.times)))
-        base = _baseline(mp.values, dt, 1.0)
+        base = compute_baseline(mp.values, dt, DeconvolutionConfig(model=params["decon_model"]))
         chsub = Chromatogram(times=mp.times, values=mp.values - base,
                              label=mp.label, injection_id=mp.injection_id)
         st.pyplot(plot_deconvolution(chsub, components, table),
