@@ -33,20 +33,183 @@ from ..models import Chromatogram, PDAData, Peak, PeakTable, TrackingResult
 
 __all__ = [
     "plot_chromatogram",
+    "plot_labeled_chromatogram",
     "plot_contour",
     "plot_uv_spectra",
     "plot_tracking",
     "save_figure",
+    "peak_palette",
+    "configure_japanese_font",
 ]
 
+#: Candidate CJK-capable font files, in preference order.
+_JP_FONT_CANDIDATES = (
+    "/usr/share/fonts/opentype/ipafont-gothic/ipagp.ttf",
+    "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf",
+    "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJKjp-Regular.otf",
+)
 
-def _resolve_ax(ax):
+
+def configure_japanese_font(path: str | None = None) -> str | None:
+    """Register a CJK font with matplotlib so Japanese labels render.
+
+    Returns the font family name that was configured, or ``None`` if no CJK
+    font could be found (in which case Japanese text falls back to tofu and
+    callers may prefer ASCII labels). Safe to call repeatedly.
+    """
+    import os
+    from matplotlib import font_manager
+
+    candidates = [path] if path else list(_JP_FONT_CANDIDATES)
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            font_manager.fontManager.addfont(candidate)
+            name = font_manager.FontProperties(fname=candidate).get_name()
+            # Fall back to DejaVu Sans for glyphs the CJK font lacks (e.g. µ).
+            plt.rcParams["font.family"] = [name, "DejaVu Sans"]
+            plt.rcParams["axes.unicode_minus"] = False
+            return name
+    return None
+
+
+def _resolve_ax(ax, figsize=None):
     """Return (figure, axes), creating a new Figure/Axes pair if needed."""
     if ax is None:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.figure
     return fig, ax
+
+
+def peak_palette(n: int) -> list:
+    """A soft, evenly-spaced hue sequence for labeling many peaks.
+
+    Identity is carried by each peak's text label and x-position, so color
+    here only separates neighbours (as in a Waters QDa/SIR overlay). Hues are
+    spread around the wheel at a gentle saturation so the result reads as a
+    refined spectrum rather than a harsh rainbow.
+    """
+    import colorsys
+
+    if n <= 0:
+        return []
+    return [colorsys.hls_to_rgb((i / max(n, 1)) % 1.0, 0.45, 0.55) for i in range(n)]
+
+
+def _peak_label(peak, label_attr: str) -> str:
+    if label_attr == "lambda_max" and peak.lambda_max is not None:
+        return f"{peak.lambda_max:.0f}nm"
+    if label_attr == "apex_time":
+        return f"{peak.apex_time:.2f}"
+    return peak.peak_id or f"{peak.apex_time:.2f}"
+
+
+def plot_labeled_chromatogram(
+    chromatogram: Chromatogram,
+    table: PeakTable,
+    ax=None,
+    *,
+    label_attr: str = "lambda_max",
+    normalize: bool = True,
+    fill: bool = True,
+    colors=None,
+    y_scale: float = 1.0,
+    y_unit: str = "AU",
+) -> Figure:
+    """Waters QDa/SIR-style labeled chromatogram.
+
+    Each detected peak is drawn as an isolated coloured trace segment
+    (its neighbourhood of the chromatogram, roughly ``+/-3*FWHM`` around the
+    apex) with a vertical label above it. With ``normalize=True`` each peak is
+    scaled to unit apex height ("Y-axis normalized"), so the display reads as
+    a row of labelled peaks regardless of their true absorbance — mirroring
+    the amino-acid SIR overlay style. ``label_attr`` selects the label text:
+    ``"lambda_max"`` (default), ``"peak_id"`` or ``"apex_time"``.
+    """
+    fig, ax = _resolve_ax(ax, figsize=(12, 4.8))
+    peaks = list(table)
+    colors = colors or peak_palette(len(peaks))
+
+    scale = 1.0 if normalize else y_scale
+    times = chromatogram.times
+    apex_top = 1.0 if normalize else max((p.height * scale for p in peaks), default=1.0)
+    drawn = []  # (apex_x, apex_y, color, text) for the labeling pass
+    for i, peak in enumerate(peaks):
+        color = colors[i % len(colors)]
+        # window: the peak's own integration bounds keep each bump isolated
+        # from its neighbours (so no stray sub-peaks bleed in); a small FWHM
+        # pad lets the bump settle to baseline. Fall back to a FWHM window or
+        # a few sampling intervals when bounds are missing.
+        pad = 0.4 * peak.fwhm if peak.fwhm else 0.0
+        if peak.start_time is not None and peak.end_time is not None:
+            lo, hi = peak.start_time - pad, peak.end_time + pad
+        elif peak.fwhm:
+            lo, hi = peak.apex_time - 2.0 * peak.fwhm, peak.apex_time + 2.0 * peak.fwhm
+        else:
+            dt = chromatogram.sampling_interval
+            lo, hi = peak.apex_time - 20 * dt, peak.apex_time + 20 * dt
+        mask = (times >= lo) & (times <= hi)
+        if not mask.any():
+            continue
+        seg_t = times[mask]
+        seg_v = chromatogram.values[mask].astype(float)
+        base = float(seg_v.min())
+        denom = (peak.height - base) if normalize and peak.height > base else 1.0
+        seg_v = (seg_v - base) / denom if normalize else seg_v * scale
+        apex_y = 1.0 if normalize else peak.height * scale
+
+        ax.plot(seg_t, seg_v, color=color, linewidth=1.1, zorder=3)
+        if fill:
+            ax.fill_between(seg_t, seg_v, color=color, alpha=0.10, zorder=2)
+        drawn.append((peak.apex_time, apex_y, color, _peak_label(peak, label_attr)))
+
+    # Label pass: stagger labels into tiers so dense clusters stay legible,
+    # with a thin leader line from each apex up to its (raised) label.
+    span = float(times[-1] - times[0]) or 1.0
+    min_dx = 0.022 * span
+    step = 0.16 * apex_top
+    tier_last_x: list[float] = []
+    max_tier = 0
+    for apex_x, apex_y, color, text in drawn:
+        tier = next(
+            (t for t, lx in enumerate(tier_last_x) if apex_x - lx >= min_dx),
+            len(tier_last_x),
+        )
+        if tier == len(tier_last_x):
+            tier_last_x.append(apex_x)
+        else:
+            tier_last_x[tier] = apex_x
+        max_tier = max(max_tier, tier)
+        label_y = apex_top * 1.03 + tier * step
+        ax.plot([apex_x, apex_x], [apex_y, label_y], color=color,
+                linewidth=0.6, alpha=0.5, zorder=2)
+        ax.annotate(
+            text, xy=(apex_x, label_y), xytext=(0, 2),
+            textcoords="offset points", rotation=90,
+            ha="center", va="bottom", fontsize=7.5, color=color,
+        )
+
+    ax.axhline(0.0, color="0.85", linewidth=0.8, zorder=1)
+    ax.set_xlabel("保持時間 / Retention time (min)")
+    ax.set_ylabel("正規化強度" if normalize else f"シグナル ({y_unit})")
+    label_ceiling = apex_top * 1.03 + max_tier * step + 0.28 * apex_top
+    if normalize:
+        ax.set_ylim(0, max(1.32, label_ceiling))
+        ax.set_yticks([0, 0.5, 1.0])
+    else:
+        ax.set_ylim(0, max(apex_top * 1.1, label_ceiling))
+    ax.margins(x=0.01)
+    title = (chromatogram.label or "Chromatogram")
+    if normalize:
+        title += " — Y軸ノーマライズ"
+    if chromatogram.injection_id:
+        title = f"{title}  ({chromatogram.injection_id})"
+    ax.set_title(title)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    return fig
 
 
 def plot_chromatogram(
@@ -178,8 +341,10 @@ def plot_tracking(result: TrackingResult, ax=None) -> Figure:
     ax.set_xlabel("Injection")
     ax.set_ylabel("Apex time (min)")
     ax.set_title("Peak Tracking")
-    if result.groups:
-        ax.legend(fontsize=8)
+    # A legend with one entry per group is unreadable past a dozen groups;
+    # the connected points already show drift, so only label small sets.
+    if 0 < len(result.groups) <= 12:
+        ax.legend(fontsize=8, ncol=1)
     return fig
 
 

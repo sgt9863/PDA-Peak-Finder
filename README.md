@@ -13,10 +13,13 @@ CSV 出力と可視化を行います。
 
 - 3D データからの自動ピーク検出(`scipy.signal` ベース)
 - ピークごとの RT / FWHM / 面積 / **λmax** と UV スペクトル抽出
+- **モニタ波長フィルタ**:指定波長(例 230 nm)で吸収の弱いピークを除外
 - 複数インジェクション間のピークトラッキング(RT ベース、任意で λmax 併用)
 - CSV 出力(ピーク表・トラッキング行列・スペクトル)
-- 可視化(クロマトグラム・3D コンター・UV スペクトル・トラッキング図)
-- CLI 優先、GUI 非依存。numpy / pandas / scipy / matplotlib のみ使用
+- 可視化:**QDa/SIR 風のラベル付きクロマトグラム**(λmax ラベル・任意で Y 軸ノーマライズ)、
+  3D コンター・UV スペクトル・トラッキング図
+- **Streamlit Web アプリ**(`streamlit run streamlit_app.py`)
+- numpy / pandas / scipy / matplotlib のみ(アプリは streamlit を追加)
 
 ## インストール
 
@@ -47,8 +50,20 @@ ARW は Shift-JIS・CR 改行・タブ区切りの 3D エクスポート(時間 
 `--wavelength-range 210 400` などで解析範囲を絞れます。
 
 主なオプション:`--min-prominence`(検出感度)、`--min-distance`(最小ピーク間隔・分)、
+`--monitor-wavelength 230 --monitor-min-abs 0.01`(230 nm で吸収の弱いピークを除外)、
 `--rt-tolerance`(トラッキング許容差・分)、`--wavelength-range LO HI`(MaxPlot の波長範囲)、
 `--no-tracking` / `--no-plots`。詳細は `pda-peaks analyze -h`。
+
+### Streamlit Web アプリ
+
+```bash
+python -m pip install -e ".[app]"     # streamlit を追加インストール
+streamlit run streamlit_app.py
+```
+
+ブラウザ上で ARW をアップロード(または `data/` のサンプル・合成デモを選択)し、検出パラメータ・
+モニタ波長・除外閾値・ラベル種別・Y 軸ノーマライズをスライダーで調整しながら、ラベル付き
+クロマトグラム/ピークテーブル/UV スペクトル/コンター/トラッキングを表示し CSV を出力できます。
 
 Python API:
 
@@ -65,14 +80,15 @@ print(result.tracking.to_dataframe(value="apex_time"))
 ## 解析ワークフロー
 
 ```
-1. データ読み込み    reader.load / load_many        -> PDAData
-2. MaxPlot 生成      PDAData.maxplot()              -> Chromatogram
-3. ピーク検出        peak_detection.detect_peaks    -> PeakTable
+1. データ読み込み    reader.load / load_many              -> PDAData
+2. MaxPlot 生成      PDAData.maxplot()                    -> Chromatogram
+3. ピーク検出        peak_detection.detect_peaks          -> PeakTable
 4. ピーク特性計算     (RT / FWHM / area は 3 に内包)
-5. UV スペクトル抽出  spectra.annotate_peaks         -> λmax / spectrum 付与
-6. ピークトラッキング tracking.track_peaks           -> TrackingResult
+5. UV スペクトル抽出  spectra.annotate_peaks               -> λmax / spectrum 付与
+5b. 波長フィルタ      spectra.filter_peaks_by_absorbance   -> 230 nm 等で除外(任意)
+6. ピークトラッキング tracking.track_peaks                 -> TrackingResult
 7. CSV 出力          export.write_*
-8. 可視化            plotting.plot_*
+8. 可視化            plotting.plot_*(QDa/SIR 風含む)
 ```
 
 `pipeline.run_pipeline()` がこの一連を実行します。

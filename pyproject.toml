@@ -19,6 +19,9 @@ dependencies = [
 dev = [
     "pytest",
 ]
+app = [
+    "streamlit",
+]
 
 [project.scripts]
 pda-peaks = "pda_peak_finder.cli:main"

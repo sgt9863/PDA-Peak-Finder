@@ -119,9 +119,54 @@ def annotate_peaks(
     return table
 
 
+def absorbance_at(spectrum: UVSpectrum, wavelength: float) -> float:
+    """Absorbance at the wavelength nearest ``wavelength`` in the spectrum."""
+    idx = int(np.argmin(np.abs(spectrum.wavelengths - wavelength)))
+    return float(spectrum.values[idx])
+
+
+def filter_peaks_by_absorbance(
+    table: PeakTable,
+    wavelength: float,
+    *,
+    min_absorbance: float = 0.0,
+    min_fraction: float = 0.0,
+) -> PeakTable:
+    """Drop peaks that barely absorb at a monitoring wavelength.
+
+    A peak is kept when the absorbance of its apex spectrum at ``wavelength``
+    is at least ``min_absorbance`` (absolute, AU) AND at least
+    ``min_fraction`` of that spectrum's maximum absorbance. Peaks that have
+    no extracted spectrum are conservatively kept (annotate first to filter
+    them). Returns a NEW PeakTable; the input is not modified.
+
+    Use this to ignore peaks with no / almost no absorption at, e.g., 230 nm.
+    """
+    kept: list[Peak] = []
+    for peak in table.peaks:
+        if peak.spectrum is None:
+            kept.append(peak)
+            continue
+        a = absorbance_at(peak.spectrum, wavelength)
+        spectrum_max = float(np.max(peak.spectrum.values))
+        threshold = max(min_absorbance, min_fraction * spectrum_max)
+        if a >= threshold:
+            kept.append(peak)
+    # Renumber kept peaks so peak_id stays contiguous (P001, P002, ...).
+    for i, peak in enumerate(kept, start=1):
+        peak.peak_id = f"P{i:03d}"
+    return PeakTable(
+        peaks=kept,
+        injection_id=table.injection_id,
+        source_label=table.source_label,
+    )
+
+
 __all__ = [
     "SpectrumConfig",
     "extract_peak_spectrum",
     "compute_lambda_max",
     "annotate_peaks",
+    "absorbance_at",
+    "filter_peaks_by_absorbance",
 ]

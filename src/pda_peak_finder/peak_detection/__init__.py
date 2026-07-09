@@ -9,8 +9,10 @@ and produces a :class:`~pda_peak_finder.models.PeakTable`.
 from __future__ import annotations
 
 from .detect import PeakDetectionConfig, detect_peaks
+from .filters import filter_peaks_by_height
 
 __all__ = [
     "PeakDetectionConfig",
     "detect_peaks",
+    "filter_peaks_by_height",
 ]

@@ -32,6 +32,11 @@ def _build_config(args: argparse.Namespace) -> AnalysisConfig:
         spectrum=SpectrumConfig(apex_average_scans=args.apex_average_scans),
         tracking=TrackingConfig(rt_tolerance=args.rt_tolerance),
         wavelength_range=wl_range,
+        monitor_wavelength=args.monitor_wavelength,
+        monitor_min_absorbance=args.monitor_min_abs,
+        monitor_min_fraction=args.monitor_min_fraction,
+        # detection already enforces --min-height; the filter adds the upper bound
+        height_max=args.max_height,
     )
 
 
@@ -96,12 +101,20 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
                    help="directory for CSV + plot outputs")
     p.add_argument("--min-height", type=float, default=None,
                    help="minimum peak height (AU)")
+    p.add_argument("--max-height", type=float, default=None,
+                   help="drop peaks taller than this height (AU)")
     p.add_argument("--min-prominence", type=float, default=0.01,
                    help="minimum peak prominence (AU)")
     p.add_argument("--min-distance", type=float, default=0.05,
                    help="minimum peak separation (minutes)")
     p.add_argument("--apex-average-scans", type=int, default=0,
                    help="average spectra over +/- N scans around each apex")
+    p.add_argument("--monitor-wavelength", type=float, default=None,
+                   help="drop peaks with little/no absorbance at this wavelength (nm)")
+    p.add_argument("--monitor-min-abs", type=float, default=0.0,
+                   help="min absolute absorbance (AU) required at --monitor-wavelength")
+    p.add_argument("--monitor-min-fraction", type=float, default=0.0,
+                   help="min absorbance at --monitor-wavelength as fraction of peak max")
     p.add_argument("--rt-tolerance", type=float, default=0.2,
                    help="RT tolerance for peak tracking (minutes)")
     p.add_argument("--wavelength-range", type=float, nargs=2, default=None,

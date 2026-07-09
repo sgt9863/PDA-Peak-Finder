@@ -112,11 +112,13 @@ PDA-Peak-Finder/
 - 各ピークに RT(apex_time)・height・積分区間(start/end)・**FWHM**・area を付与。
 - 実装は `scipy.signal`(`find_peaks`, `peak_widths`, 任意で `savgol_filter`)。
 - 調整パラメータは `PeakDetectionConfig`(prominence・最小間隔・平滑化など)。
+- `filter_peaks_by_height` で高さ範囲外(AU)のピークを除外(検出器単位 µV は呼び出し側で AU に換算)。
 
 ### spectra — UV スペクトル抽出・λmax
 - `PDAData` から各ピーク apex の UV スペクトルを抽出。
 - **λmax**(吸光度最大の波長)を算出し、`PeakTable` の各 `Peak` に `spectrum`/`lambda_max` を付与。
 - apex 周辺スキャン平均・波長方向平滑化・ベースライン減算を `SpectrumConfig` で制御。
+- `filter_peaks_by_absorbance` でモニタ波長(例 230 nm)の吸収が弱いピークを除外。
 
 ### tracking — 分析間ピークトラッキング
 - 複数 `PeakTable` を受け取り、同一化合物と推定されるピークを RT(任意で λmax)で対応付け。
@@ -130,10 +132,16 @@ PDA-Peak-Finder/
 ### plotting — 可視化
 - matplotlib(Agg バックエンド)で図を生成し `Figure` を返す。
 - クロマトグラム+ピーク注釈、3D コンター、UV スペクトル重ね描き、トラッキング図、保存ヘルパー。
+- `plot_labeled_chromatogram`:Waters QDa/SIR 風のラベル付き(λmax)クロマトグラム。
+  各ピークを独立バンプで色分け、密集部はラベルを段階配置してリーダー線で接続、
+  任意で Y 軸ノーマライズ、`y_scale`/`y_unit` で µV 等の表示単位に対応。
+- `configure_japanese_font` が CJK フォント(IPAGothic 等)を登録(µ 等は DejaVu にフォールバック)。
 
-### pipeline / cli — オーケストレーションと CLI
-- `pipeline` がワークフロー 1→8 を束ね、`AnalysisConfig` を保持。
+### pipeline / cli / streamlit_app — オーケストレーション・CLI・Web アプリ
+- `pipeline` がワークフロー 1→8(+波長/高さフィルタ)を束ね、`AnalysisConfig` を保持。
 - `cli` は `analyze`(ファイル解析)と `demo`(合成データ)の 2 サブコマンド。
+- `streamlit_app.py`(リポジトリ直下)は同じパイプラインの対話 UI。パラメータ・モニタ波長・
+  高さ範囲(µV)・ラベル種別・ノーマライズを操作し、各図と CSV を出力(`.[app]` extra: streamlit)。
 
 ## リーダーインターフェース設計
 

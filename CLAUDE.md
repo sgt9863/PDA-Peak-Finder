@@ -18,6 +18,8 @@ python -m pytest tests/test_spectra.py -q   # single module
 python -m pytest tests/test_spectra.py::test_name   # single test
 pda-peaks demo -o results/                  # run full pipeline on built-in synthetic data
 pda-peaks analyze data/*.arw -o results/    # analyze real Waters Empower ARW exports
+pda-peaks analyze data/*.arw --monitor-wavelength 230 --monitor-min-abs 0.01  # drop non-230nm peaks
+python -m pip install -e ".[app]" && streamlit run streamlit_app.py           # web app
 ```
 
 `pda-peaks demo` and `pda_peak_finder.testing.synthetic_pdadata()` exercise the whole pipeline
@@ -40,11 +42,15 @@ contract binding all modules together. Change the model deliberately — it ripp
   endings, TAB-separated; `波長` wavelength axis + `時間` time-major data block; structural, not
   label-dependent; drops a truncated final row).
 - `peak_detection/` — detect peaks in a `Chromatogram`, compute RT/FWHM/area (scipy.signal).
-- `spectra/` — extract UV spectrum at each apex, compute λmax, annotate the `PeakTable`.
+- `spectra/` — extract UV spectrum at each apex, compute λmax, annotate the `PeakTable`;
+  `filter_peaks_by_absorbance` drops peaks with little/no absorbance at a monitoring wavelength.
 - `tracking/` — match peaks across injections (greedy, RT-based, optional λmax).
 - `export/` — write `PeakTable`/`TrackingResult`/spectra to CSV (pandas).
 - `plotting/` — matplotlib figures (Agg backend). Returns `Figure`; `save_figure` writes files.
+  `plot_labeled_chromatogram` renders the Waters QDa/SIR-style labelled (λmax) chromatogram with
+  optional Y-axis normalization; `configure_japanese_font` registers a CJK font for Japanese labels.
 - `pipeline.py` / `cli.py` — orchestration and the `pda-peaks` CLI (`analyze` / `demo`).
+- `streamlit_app.py` (repo root) — interactive web UI over the pipeline (`.[app]` extra: streamlit).
 - `testing.py` — `synthetic_pdadata()` builds a `PDAData` with known RT/FWHM/λmax for ground-truth tests.
 
 Units are fixed everywhere: **time = minutes, wavelength = nm, absorbance = AU**. Readers are

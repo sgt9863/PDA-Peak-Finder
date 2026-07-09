@@ -19,7 +19,7 @@ from typing import Iterable, Sequence
 
 from . import export
 from .models import PDAData, PeakTable, TrackingResult
-from .peak_detection import PeakDetectionConfig, detect_peaks
+from .peak_detection import PeakDetectionConfig, detect_peaks, filter_peaks_by_height
 from .plotting import (
     plot_chromatogram,
     plot_contour,
@@ -28,7 +28,7 @@ from .plotting import (
     save_figure,
 )
 from .reader import load, load_many
-from .spectra import SpectrumConfig, annotate_peaks
+from .spectra import SpectrumConfig, annotate_peaks, filter_peaks_by_absorbance
 from .tracking import TrackingConfig, track_peaks
 
 
@@ -41,6 +41,18 @@ class AnalysisConfig:
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     #: Restrict the MaxPlot to this wavelength window (nm), or None for full range.
     wavelength_range: tuple[float, float] | None = None
+    #: Drop peaks with little/no absorbance at this monitoring wavelength (nm).
+    #: None disables the filter.
+    monitor_wavelength: float | None = None
+    #: Minimum absolute absorbance (AU) required at ``monitor_wavelength``.
+    monitor_min_absorbance: float = 0.0
+    #: Minimum absorbance at ``monitor_wavelength`` as a fraction of the peak's
+    #: own spectral maximum (0 disables the relative test).
+    monitor_min_fraction: float = 0.0
+    #: Keep only peaks whose height is within [height_min, height_max] (AU).
+    #: None disables that bound. (Convert detector-unit ranges, e.g. µV, to AU.)
+    height_min: float | None = None
+    height_max: float | None = None
 
 
 @dataclass
@@ -65,6 +77,17 @@ def analyze_injection(
     table = detect_peaks(maxplot, config.detection)
     table.source_label = maxplot.label
     annotate_peaks(data, table, config.spectrum)
+    if config.monitor_wavelength is not None:
+        table = filter_peaks_by_absorbance(
+            table,
+            config.monitor_wavelength,
+            min_absorbance=config.monitor_min_absorbance,
+            min_fraction=config.monitor_min_fraction,
+        )
+    if config.height_min is not None or config.height_max is not None:
+        table = filter_peaks_by_height(
+            table, min_height=config.height_min, max_height=config.height_max
+        )
     return table
 
 
