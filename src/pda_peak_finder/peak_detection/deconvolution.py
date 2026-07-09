@@ -43,7 +43,7 @@ class DeconvolutionConfig:
     shoulder_rel_prominence: float = 0.05  # 2nd-deriv shoulder seed sensitivity
     baseline_window_min: float = 1.0   # rolling-opening baseline window (minutes)
     overlap_valley_ratio: float = 0.5  # group peaks whose valley stays above this
-    max_peaks_per_cluster: int = 6     # cap components fit jointly (stability)
+    max_peaks_per_cluster: int = 5     # split clusters larger than this (speed)
     merge_rt_ratio: float = 0.25       # merge components closer than this·FWHM (RT)
     fit_maxfev: int = 8000
 
@@ -164,6 +164,22 @@ def _baseline(values, dt, window_min):
     return uniform_filter1d(opened, w)
 
 
+def _split_large(group, values, max_size):
+    """Split a large cluster at its deepest internal valleys until each chunk
+    has at most ``max_size`` seeds. Splitting at the most-resolved boundaries
+    keeps big joint fits fast and stable while barely touching real overlaps.
+    """
+    if len(group) <= max_size:
+        return [group]
+    best_k, best_v = 1, np.inf
+    for k in range(1, len(group)):
+        v = float(values[group[k - 1]:group[k] + 1].min())
+        if v < best_v:
+            best_v, best_k = v, k
+    left, right = group[:best_k], group[best_k:]
+    return _split_large(left, values, max_size) + _split_large(right, values, max_size)
+
+
 def _group_by_valley(values, seeds, config):
     """Group adjacent seeds that are NOT baseline-resolved (shallow valley).
 
@@ -234,6 +250,9 @@ def detect_peaks_deconvolved(
 
     seeds = _seed_apexes(times, values, config)
     groups = _group_by_valley(values, seeds, config)
+    # keep joint fits small & fast: split big clusters at their deepest valleys
+    groups = [sg for g in groups
+              for sg in _split_large(g, values, config.max_peaks_per_cluster)]
     items: list[tuple[Peak, tuple | None]] = []  # (peak, component-curve or None)
 
     for group in groups:
